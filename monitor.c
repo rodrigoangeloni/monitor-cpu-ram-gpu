@@ -766,7 +766,17 @@ static void DrawHeader(HDC hdc, RECT cr)
     int gearX = cr.right - g_l.pad_x - gearSize;
     int gearY = g_l.pad_y;
 
-    DrawGearIcon(hdc, gearX + gearSize/2, gearY + gearSize/2, gearSize - 2, COL_GEAR);
+    /* Unicode gear symbol (U+2699) from Segoe UI Symbol */
+    old = SelectObject(hdc, g_fGear);
+    SetTextColor(hdc, COL_GEAR);
+    SetBkMode(hdc, TRANSPARENT);
+    WCHAR gearChar = 0x2699;
+    SIZE gearSz;
+    GetTextExtentPoint32W(hdc, &gearChar, 1, &gearSz);
+    int gearTextX = gearX + (gearSize - gearSz.cx) / 2;
+    int gearTextY = gearY + (gearSize - gearSz.cy) / 2;
+    TextOutW(hdc, gearTextX, gearTextY, &gearChar, 1);
+    SelectObject(hdc, old);
 }
 
 static void DrawFooter(HDC hdc, RECT cr)

@@ -585,7 +585,7 @@ static void RecalcLayout(void)
 {
     g_l.width      = (int)(280.0f * g_scale);
     g_l.header_h   = (int)(22.0f  * g_scale);
-    g_l.footer_h   = (int)(14.0f  * g_scale);
+    g_l.footer_h   = (int)(18.0f  * g_scale);
     g_l.sec_h      = (int)(40.0f  * g_scale);
     g_l.sec_h_net  = (int)(32.0f  * g_scale);
     g_l.pad_x      = (int)(8.0f   * g_scale);
@@ -773,10 +773,10 @@ static void DrawFooter(HDC hdc, RECT cr)
 {
     HGDIOBJ old = SelectObject(hdc, g_fFtr);
     WCHAR buf[64];
-    StringCchPrintfW(buf, 64, L"Producido por RoanDev (%s)", APP_VERSION);
+    StringCchPrintfW(buf, 64, L"Desarrollado por RoanDev %s", APP_VERSION);
     SIZE sz;
     GetTextExtentPoint32W(hdc, buf, (int)lstrlenW(buf), &sz);
-    TextOutOutlined(hdc, cr.right - g_l.pad_x - sz.cx, cr.bottom - g_l.footer_h + S(6), buf, COL_TEXT_LOW, RGB(0,0,0));
+    TextOutOutlined(hdc, cr.right - g_l.pad_x - sz.cx, cr.bottom - g_l.footer_h + S(2), buf, COL_TEXT_LOW, RGB(0,0,0));
     SelectObject(hdc, old);
 }
 

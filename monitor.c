@@ -4,27 +4,74 @@
 #include <windowsx.h>
 #include <shellapi.h>
 #include <pdh.h>
+#include <iphlpapi.h>
+#include <initguid.h>
+#include <dxgi.h>
 #include <strsafe.h>
 #include <stdint.h>
 
-#define WIDTH      252
-#define HEIGHT     84
-#define PAD_X      8
-#define PAD_Y      5
-#define LINE_H     23
-#define BAR_H      9
-#define BAR_X      76
-#define BAR_W      158
-#define LABEL_W    44
-#define FONT_SZ    11
-#define TIMER_ID   1
-#define REFRESH_MS 1000
+typedef struct {
+    int width;
+    int header_h;
+    int footer_h;
+    int sec_h;
+
+    int sec_h_net;
+    int pad_x;
+    int pad_y;
+    int bar_h;
+    int sz_hdr;
+    int sz_ttl;
+    int sz_sub;
+    int sz_bar;
+    int sz_gear;
+    int sz_net;
+    int sz_ftr;
+} Layout;
+
+static const int   SCALE_PCT[]    = { 50, 75, 100, 125, 150 };
+static const float SCALE_VAL[]    = { 0.50f, 0.75f, 1.00f, 1.25f, 1.50f };
+static const int   OPACITY_PCT[]  = { 100, 85, 70, 50 };
+static const BYTE  OPACITY_VAL[]  = { 255, 217, 179, 128 };
+#define N_SCALE   5
+#define N_OPACITY 4
+#define S(n) ((int)((n) * g_scale))
+
+#define TIMER_ID      1
+#define REFRESH_MS    1000
+#define APP_VERSION   L"v1.5"
+#define WM_TASKBAR    (WM_APP + 1)
+#define WM_TRAY       (WM_APP + 2)
+#define ID_LOCK       100
+#define ID_EXIT       101
+#define ID_OPACITY_100 110
+#define ID_OPACITY_85  111
+#define ID_OPACITY_70  112
+#define ID_OPACITY_50  113
+#define ID_SCALE_50    120
+#define ID_SCALE_75    121
+#define ID_SCALE_100   122
+#define ID_SCALE_125   123
+#define ID_SCALE_150   124
 #define PDH_CSTATUS_VALID_DATA 0L
 #define PDH_CSTATUS_NEW_DATA   1L
-#define WM_TASKBAR (WM_APP + 1)
-#define WM_TRAY    (WM_APP + 2)
-#define ID_LOCK    100
-#define ID_EXIT    101
+#define AC_SRC_OVER   0x00
+#define IF_OPER_CONNECTED  5
+#define IF_OPER_OPERATIONAL 6
+
+#define COL_BG_TOP    RGB(8, 10, 16)
+#define COL_BG_BOT    RGB(22, 24, 34)
+#define COL_TRACK     RGB(20, 22, 30)
+#define COL_FRAME     RGB(70, 80, 100)
+#define COL_TEXT_HI   RGB(235, 238, 245)
+#define COL_TEXT_DIM  RGB(120, 128, 145)
+#define COL_TEXT_LOW  RGB(95, 100, 115)
+#define COL_CPU       RGB(40, 220, 130)
+#define COL_RAM       RGB(240, 180, 50)
+#define COL_GPU       RGB(40, 230, 200)
+#define COL_VRAM      RGB(90, 195, 245)
+#define COL_NET       RGB(255, 60, 100)
+#define COL_GEAR      RGB(180, 200, 230)
 
 static HINSTANCE      g_hInst;
 static HWND           g_hWnd;
@@ -32,10 +79,17 @@ static int            g_locked;
 static int            g_running = 1;
 static NOTIFYICONDATAW g_nid;
 static UINT           g_taskbarCreated;
+static int            g_currentH;
+static Layout         g_l;
+static BYTE           g_opacity = 255;
+static float          g_scale   = 1.0f;
+static int            g_gearDown;
 static float          g_cpu;
 static float          g_ramPct;
 static DWORD          g_ramUsed, g_ramTotal;
 static float          g_gpu;
+static float          g_vramPct;
+static DWORD          g_vramUsed, g_vramTotal;
 static HICON          g_hIcon;
 static int            g_iconCustom;
 
@@ -43,6 +97,26 @@ static HQUERY   g_hCPUQ;
 static HCOUNTER g_hCPUctr;
 static int      g_cpuOK;
 static int      g_cpuBaseline;
+
+static DWORD   g_netDownBps;
+static DWORD   g_netUpBps;
+static int     g_netOK;
+static MIB_IFTABLE *g_pIfTable;
+static ULONGLONG g_netPrevIn[64];
+static ULONGLONG g_netPrevOut[64];
+static int       g_netPrevValid[64];
+static DWORD     g_netPrevCount;
+static ULONGLONG g_netPrevTick;
+
+static COLORREF g_glowColor;
+
+static HFONT    g_fHdr;
+static HFONT    g_fTtl;
+static HFONT    g_fSub;
+static HFONT    g_fBar;
+static HFONT    g_fGear;
+static HFONT    g_fNet;
+static HFONT    g_fFtr;
 
 static void CPUInit(void)
 {
@@ -95,26 +169,8 @@ static int      g_gpuOK;
 static ULONGLONG g_gpuLastTick;
 static ULONGLONG g_gpuReenumTick;
 
-#ifdef _DEBUG
-static void GPUWriteDebug(const WCHAR *msg)
-{
-    HANDLE h = CreateFileW(L"gpu_debug.txt", GENERIC_WRITE, 0, NULL,
-                           OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h != INVALID_HANDLE_VALUE) {
-        SetFilePointer(h, 0, NULL, FILE_END);
-        DWORD n;
-        WriteFile(h, msg, (DWORD)(lstrlenW(msg) * sizeof(WCHAR)), &n, NULL);
-        CloseHandle(h);
-    }
-}
-#endif
-
 static int GPUReenum(void)
 {
-    // save old prev values keyed by path
-#ifdef _DEBUG
-    GPUWriteDebug(L"  reenum\n");
-#endif
     DWORD oldCount = g_gpuCount;
     LPWSTR *oldPaths = g_gpuPaths;
     ULONGLONG *oldPrev = g_gpuPrev;
@@ -155,7 +211,6 @@ static int GPUReenum(void)
     while (*pp && idx < cnt) {
         g_gpuPaths[idx] = pp;
         g_gpuPrev[idx] = 0;
-        // try to carry over old prev value
         for (DWORD oi = 0; oi < oldCount; oi++)
             if (oldPaths && oldPaths[oi] && wcscmp(pp, oldPaths[oi]) == 0) {
                 g_gpuPrev[idx] = oldPrev[oi]; break;
@@ -166,7 +221,6 @@ static int GPUReenum(void)
     }
     g_gpuCount = idx;
 
-    // clean old query
     if (oldQ) { PdhCloseQuery(oldQ); }
     if (oldCtrs) HeapFree(GetProcessHeap(), 0, oldCtrs);
     if (oldPaths) HeapFree(GetProcessHeap(), 0, oldPaths);
@@ -176,7 +230,6 @@ static int GPUReenum(void)
     return 1;
 
 fail_reenum:
-    // restore old state
     if (g_hGPUQ) { PdhCloseQuery(g_hGPUQ); g_hGPUQ = NULL; }
     g_hGPUQ = oldQ; g_hGPUctrs = oldCtrs; g_gpuPaths = oldPaths; g_gpuPrev = oldPrev; g_gpuCount = oldCount;
     return 0;
@@ -186,10 +239,6 @@ static void GPUInit(void)
 {
     g_gpuOK = 0; g_hGPUQ = NULL; g_hGPUctrs = NULL; g_gpuPaths = NULL; g_gpuPrev = NULL;
     g_gpuCount = 0; g_gpuLastTick = 0; g_gpuReenumTick = GetTickCount64();
-#ifdef _DEBUG
-    DeleteFileW(L"gpu_debug.txt");
-    GPUWriteDebug(L"GPUInit start\n");
-#endif
     if (GPUReenum()) g_gpuOK = 1;
 }
 
@@ -206,7 +255,6 @@ static float GetGPU(void)
 {
     ULONGLONG now = GetTickCount64();
 
-    // re-enum every 5s to pick up new processes (Furmark lanzado después)
     if (g_gpuReenumTick == 0 || now - g_gpuReenumTick > 5000) {
         g_gpuReenumTick = now;
         if (GPUReenum()) g_gpuOK = 1;
@@ -221,11 +269,6 @@ static float GetGPU(void)
     if (elapsed == 0) return g_gpu;
 
     float max3D = 0, maxAll = 0;
-#ifdef _DEBUG
-    static int dbgOnce = 0;
-    WCHAR gdbg[512]; int gpos = 0;
-#endif
-
     for (DWORD i = 0; i < g_gpuCount; i++) {
         if (!g_hGPUctrs[i]) continue;
         PDH_FMT_COUNTERVALUE v;
@@ -241,54 +284,803 @@ static float GetGPU(void)
         g_gpuPrev[i] = val;
     }
 
-#ifdef _DEBUG
-    if (!dbgOnce) {
-        gpos = StringCchPrintfW(gdbg, 512, L"GetGPU: %lu engs max3D=%.0f%% maxAll=%.0f%% elapsed=%llu\n",
-            g_gpuCount, max3D, maxAll, elapsed);
-        for (DWORD i = 0; i < g_gpuCount && i < 3; i++)
-            gpos += StringCchPrintfW(gdbg + gpos, 512 - gpos, L"  [%lu] %llu\n", i, g_gpuPrev[i]);
-        GPUWriteDebug(gdbg);
-        dbgOnce = 1;
-    }
-#endif
-
     float r = max3D > 0 ? max3D : maxAll;
     if (r > 100) r = 100;
     return r;
 }
 
-static COLORREF ColorPct(float p)
+static HQUERY   g_hVRAMQ;
+static HCOUNTER g_hVRAMctr;
+static int      g_vramOK;
+static IDXGIFactory  *g_dxgiFactory;
+static IDXGIAdapter  *g_dxgiAdapter;
+static ULONGLONG     g_vramTotalBytes;
+
+static void GPUVramInit(void)
 {
-    if (p < 50) return RGB(0, 210, 80);
-    if (p < 80) return RGB(210, 210, 0);
-    return RGB(220, 40, 40);
+    g_vramOK = 0;
+    g_vramTotalBytes = 0;
+    if (CreateDXGIFactory(&IID_IDXGIFactory, (void**)&g_dxgiFactory) == S_OK) {
+        if (g_dxgiFactory->lpVtbl->EnumAdapters(g_dxgiFactory, 0, &g_dxgiAdapter) == S_OK) {
+            DXGI_ADAPTER_DESC desc;
+            if (g_dxgiAdapter->lpVtbl->GetDesc(g_dxgiAdapter, &desc) == S_OK) {
+                g_vramTotalBytes = desc.DedicatedVideoMemory;
+            }
+        }
+    }
+    if (PdhOpenQueryW(NULL, 0, &g_hVRAMQ) != ERROR_SUCCESS) return;
+    if (PdhAddEnglishCounterW(g_hVRAMQ,
+            L"\\GPU Adapter Memory(*)\\Dedicated Usage",
+            0, &g_hVRAMctr) != ERROR_SUCCESS) {
+        PdhCloseQuery(g_hVRAMQ); g_hVRAMQ = NULL;
+        return;
+    }
+    if (PdhCollectQueryData(g_hVRAMQ) != ERROR_SUCCESS) {
+        PdhCloseQuery(g_hVRAMQ); g_hVRAMQ = NULL;
+        return;
+    }
+    PdhCollectQueryData(g_hVRAMQ);
+    g_vramOK = 1;
 }
 
-static void DrawBar(HDC dc, int x, int y, int w, int h, float p)
+static float GetVRAM(void)
 {
-    RECT r = { x, y, x + w, y + h };
-    HBRUSH bg = CreateSolidBrush(RGB(50, 50, 65));
-    FillRect(dc, &r, bg);
-    DeleteObject(bg);
-    if (p > 0.5f) {
-        int fw = (int)(w * p / 100.0f);
-        if (fw < 2) fw = 2;
-        HBRUSH fg = CreateSolidBrush(ColorPct(p));
-        RECT fr = { x + 1, y + 1, x + fw, y + h - 1 };
-        FillRect(dc, &fr, fg);
-        DeleteObject(fg);
+    if (!g_vramOK || !g_hVRAMQ) return -1;
+    if (PdhCollectQueryData(g_hVRAMQ) != ERROR_SUCCESS) return g_vramPct;
+
+    DWORD bufSize = 0;
+    DWORD itemCount = 0;
+    PdhGetFormattedCounterArrayW(g_hVRAMctr, PDH_FMT_LARGE, &bufSize, &itemCount, NULL);
+
+    ULONGLONG totalUsed = 0;
+    if (bufSize > 0 && itemCount > 0) {
+        PDH_FMT_COUNTERVALUE_ITEM_W *items =
+            (PDH_FMT_COUNTERVALUE_ITEM_W*)HeapAlloc(GetProcessHeap(), 0, bufSize);
+        if (items) {
+            if (PdhGetFormattedCounterArrayW(g_hVRAMctr, PDH_FMT_LARGE,
+                    &bufSize, &itemCount, items) == ERROR_SUCCESS) {
+                for (DWORD i = 0; i < itemCount; i++) {
+                    if (items[i].FmtValue.CStatus == PDH_CSTATUS_VALID_DATA ||
+                        items[i].FmtValue.CStatus == PDH_CSTATUS_NEW_DATA) {
+                        totalUsed += (ULONGLONG)items[i].FmtValue.largeValue;
+                    }
+                }
+            }
+            HeapFree(GetProcessHeap(), 0, items);
+        }
     }
+    g_vramUsed = (DWORD)(totalUsed >> 20);
+
+    g_vramTotal = (DWORD)(g_vramTotalBytes >> 20);
+
+    if (g_vramTotal > 0) {
+        g_vramPct = (float)((double)g_vramUsed * 100.0 / (double)g_vramTotal);
+        if (g_vramPct > 100.0f) g_vramPct = 100.0f;
+    } else {
+        g_vramPct = -1;
+    }
+    return g_vramPct;
+}
+
+static void GPUVramUninit(void)
+{
+    if (g_hVRAMQ) { PdhCloseQuery(g_hVRAMQ); g_hVRAMQ = NULL; }
+    if (g_dxgiAdapter) { g_dxgiAdapter->lpVtbl->Release(g_dxgiAdapter); g_dxgiAdapter = NULL; }
+    if (g_dxgiFactory) { g_dxgiFactory->lpVtbl->Release(g_dxgiFactory); g_dxgiFactory = NULL; }
+    g_vramOK = 0;
+}
+
+static int NetInit(void)
+{
+    g_netOK = 0;
+    g_netDownBps = g_netUpBps = 0;
+    g_netPrevCount = 0;
+    ZeroMemory(g_netPrevIn, sizeof(g_netPrevIn));
+    ZeroMemory(g_netPrevOut, sizeof(g_netPrevOut));
+    ZeroMemory(g_netPrevValid, sizeof(g_netPrevValid));
+    g_netPrevTick = GetTickCount64();
+
+    ULONG sz = sizeof(MIB_IFTABLE);
+    g_pIfTable = (MIB_IFTABLE*)HeapAlloc(GetProcessHeap(), 0, sz);
+    if (!g_pIfTable) return 0;
+
+    DWORD rc = GetIfTable(g_pIfTable, &sz, FALSE);
+    if (rc == ERROR_INSUFFICIENT_BUFFER) {
+        HeapFree(GetProcessHeap(), 0, g_pIfTable);
+        g_pIfTable = (MIB_IFTABLE*)HeapAlloc(GetProcessHeap(), 0, sz);
+        if (!g_pIfTable) return 0;
+        rc = GetIfTable(g_pIfTable, &sz, FALSE);
+    }
+    if (rc != NO_ERROR) {
+        HeapFree(GetProcessHeap(), 0, g_pIfTable);
+        g_pIfTable = NULL;
+        return 0;
+    }
+    g_netOK = 1;
+    return 1;
+}
+
+static void SampleNet(void)
+{
+    if (!g_netOK || !g_pIfTable) return;
+
+    ULONG sz = (ULONG)HeapSize(GetProcessHeap(), 0, g_pIfTable);
+    if (sz == 0) sz = sizeof(MIB_IFTABLE);
+    if (GetIfTable(g_pIfTable, &sz, FALSE) != NO_ERROR) {
+        g_netOK = 0;
+        return;
+    }
+
+    ULONGLONG now = GetTickCount64();
+    ULONGLONG elapsed = now - g_netPrevTick;
+    if (elapsed == 0) return;
+
+    ULONGLONG totalIn = 0, totalOut = 0;
+    DWORD cnt = g_pIfTable->dwNumEntries;
+    if (cnt > 64) cnt = 64;
+    g_netPrevCount = cnt;
+
+    for (DWORD i = 0; i < cnt; i++) {
+        MIB_IFROW *r = &g_pIfTable->table[i];
+        if (r->dwType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
+        if (r->dwOperStatus < IF_OPER_CONNECTED) continue;
+
+        DWORD inOct = r->dwInOctets;
+        DWORD outOct = r->dwOutOctets;
+
+        if (g_netPrevValid[i]) {
+            DWORD prevIn = (DWORD)g_netPrevIn[i];
+            DWORD prevOut = (DWORD)g_netPrevOut[i];
+            DWORD dIn = (DWORD)(((ULONGLONG)inOct - prevIn) & 0xFFFFFFFFULL);
+            DWORD dOut = (DWORD)(((ULONGLONG)outOct - prevOut) & 0xFFFFFFFFULL);
+            totalIn += dIn;
+            totalOut += dOut;
+        }
+        g_netPrevIn[i] = inOct;
+        g_netPrevOut[i] = outOct;
+        g_netPrevValid[i] = 1;
+    }
+    g_netPrevTick = now;
+
+    g_netDownBps = (DWORD)((totalIn * 8ULL * 1000ULL) / elapsed);
+    g_netUpBps   = (DWORD)((totalOut * 8ULL * 1000ULL) / elapsed);
+}
+
+static void NetUninit(void)
+{
+    if (g_pIfTable) {
+        HeapFree(GetProcessHeap(), 0, g_pIfTable);
+        g_pIfTable = NULL;
+    }
+    g_netOK = 0;
+}
+
+static void GlowSetColor(COLORREF c)
+{
+    g_glowColor = c;
+}
+
+static void GlowDraw(HDC dst, int x, int y, int w, int h, BYTE alpha)
+{
+    if (alpha == 0 || w <= 0 || h <= 0) return;
+
+    BITMAPINFO bi = {0};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    BYTE *bits = NULL;
+    HDC memDC = CreateCompatibleDC(dst);
+    HBITMAP bmp = CreateDIBSection(memDC, &bi, DIB_RGB_COLORS, (void**)&bits, NULL, 0);
+    if (!bmp || !bits) {
+        if (bmp) DeleteObject(bmp);
+        DeleteDC(memDC);
+        return;
+    }
+    HGDIOBJ old = SelectObject(memDC, bmp);
+
+    int cx = w / 2;
+    int cy = h / 2;
+    int rx = w - cx;   if (rx < 1) rx = 1;
+    int ry = h - cy;   if (ry < 1) ry = 1;
+    int rx2 = rx * rx;
+    int ry2 = ry * ry;
+    DWORD col = 0xFF000000
+              | ((DWORD)GetBValue(g_glowColor))
+              | ((DWORD)GetGValue(g_glowColor) << 8)
+              | ((DWORD)GetRValue(g_glowColor) << 16);
+
+    DWORD *px = (DWORD*)bits;
+    for (int py = 0; py < h; py++) {
+        int dy = py - cy;
+        int dy2 = dy * dy;
+        for (int px_ = 0; px_ < w; px_++) {
+            int dx = px_ - cx;
+            double d2 = (double)(dx * dx) / (double)rx2 + (double)dy2 / (double)ry2;
+            if (d2 < 1.0) {
+                double t = 1.0 - d2;
+                double falloff = t * t * t * t;  /* sharp falloff like neon tube */
+                BYTE a = (BYTE)((double)alpha * falloff);
+                if (a > 0) {
+                    *px = (col & 0x00FFFFFF) | ((DWORD)a << 24);
+                }
+            }
+            px++;
+        }
+    }
+
+    BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+    AlphaBlend(dst, x, y, w, h, memDC, 0, 0, w, h, bf);
+
+    SelectObject(memDC, old);
+    DeleteObject(bmp);
+    DeleteDC(memDC);
+}
+
+static void FontsInit(void)
+{
+    g_fHdr  = CreateFontW(g_l.sz_hdr, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                          CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    g_fTtl  = CreateFontW(g_l.sz_ttl, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                          CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    g_fSub  = CreateFontW(g_l.sz_sub, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                          CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    g_fBar  = CreateFontW(g_l.sz_bar, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                          CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    g_fGear = CreateFontW(g_l.sz_gear, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                          CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI Symbol");
+    g_fNet  = CreateFontW(g_l.sz_net, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                          CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    g_fFtr  = CreateFontW(g_l.sz_ftr, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                          CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+}
+
+static void FontsUninit(void)
+{
+    if (g_fHdr)  DeleteObject(g_fHdr);
+    if (g_fTtl)  DeleteObject(g_fTtl);
+    if (g_fSub)  DeleteObject(g_fSub);
+    if (g_fBar)  DeleteObject(g_fBar);
+    if (g_fGear) DeleteObject(g_fGear);
+    if (g_fNet)  DeleteObject(g_fNet);
+    if (g_fFtr)  DeleteObject(g_fFtr);
+    g_fHdr = g_fTtl = g_fSub = g_fBar = g_fGear = g_fNet = g_fFtr = NULL;
+}
+
+static int ComputeLayout(void)
+{
+    int h = g_l.header_h + g_l.pad_y;
+    h += g_l.sec_h;
+    h += g_l.sec_h;
+    if (g_gpuOK && g_gpu >= 0) {
+        h += g_l.bar_h + S(8) + S(8);
+        if (g_vramOK && g_vramPct >= 0 && g_vramTotal > 0) {
+            h += g_l.bar_h + S(8);
+        } else {
+            h += S(12);
+        }
+    }
+    if (g_netOK) {
+        h += g_l.sec_h_net;
+    }
+    h += g_l.pad_y + g_l.footer_h;
+    return h;
+}
+
+static void ApplyOpacity(void)
+{
+    if (g_hWnd) {
+        SetLayeredWindowAttributes(g_hWnd, 0, g_opacity, LWA_ALPHA);
+    }
+}
+
+static void RecalcLayout(void)
+{
+    g_l.width      = (int)(880.0f * g_scale);
+    g_l.header_h   = (int)(54.0f  * g_scale);
+    g_l.footer_h   = (int)(26.0f  * g_scale);
+    g_l.sec_h      = (int)(98.0f  * g_scale);
+    g_l.sec_h_net  = (int)(78.0f  * g_scale);
+    g_l.pad_x      = (int)(20.0f  * g_scale);
+    g_l.pad_y      = (int)(14.0f  * g_scale);
+    g_l.bar_h      = (int)(30.0f  * g_scale);
+    if (g_l.bar_h < 16) g_l.bar_h = 16;
+    g_l.sz_hdr     = (int)(-19.0f * g_scale);
+    g_l.sz_ttl     = (int)(-26.0f * g_scale);
+    g_l.sz_sub     = (int)(-13.0f * g_scale);
+    g_l.sz_bar     = (int)(-19.0f * g_scale);
+    g_l.sz_gear    = (int)(-22.0f * g_scale);
+    g_l.sz_net     = (int)(-17.0f * g_scale);
+    g_l.sz_ftr     = (int)(-11.0f * g_scale);
+
+    if (g_l.sz_hdr > -8)  g_l.sz_hdr  = -8;
+    if (g_l.sz_ttl > -9)  g_l.sz_ttl  = -9;
+    if (g_l.sz_sub > -8)  g_l.sz_sub  = -8;
+    if (g_l.sz_bar > -8)  g_l.sz_bar  = -8;
+    if (g_l.sz_gear > -8) g_l.sz_gear = -8;
+    if (g_l.sz_net > -8)  g_l.sz_net  = -8;
+    if (g_l.sz_ftr > -8)  g_l.sz_ftr  = -8;
+
+    FontsUninit();
+    FontsInit();
+
+    int newH = ComputeLayout();
+    if (g_hWnd) {
+        RECT rc; GetWindowRect(g_hWnd, &rc);
+        SetWindowPos(g_hWnd, NULL, rc.left, rc.top, g_l.width, newH,
+                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        ApplyOpacity();
+    }
+    g_currentH = newH;
+    if (g_hWnd) InvalidateRect(g_hWnd, NULL, FALSE);
+}
+
+static void LoadSettings(void)
+{
+    g_opacity = 255;
+    g_scale = 1.0f;
+    HKEY hKey;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RoanDev\\MonitorOverlay",
+                      0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS) {
+        DWORD v, sz = sizeof(DWORD);
+        if (RegQueryValueExW(hKey, L"Opacity", NULL, NULL, (BYTE*)&v, &sz) == ERROR_SUCCESS) {
+            if (v >= 50 && v <= 255) g_opacity = (BYTE)v;
+        }
+        sz = sizeof(DWORD);
+        if (RegQueryValueExW(hKey, L"Scale", NULL, NULL, (BYTE*)&v, &sz) == ERROR_SUCCESS) {
+            int pct = (int)v;
+            for (int i = 0; i < N_SCALE; i++) {
+                if (pct == SCALE_PCT[i]) { g_scale = SCALE_VAL[i]; break; }
+            }
+        }
+        RegCloseKey(hKey);
+    }
+}
+
+static void SaveSettings(void)
+{
+    HKEY hKey;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\RoanDev\\MonitorOverlay",
+                        0, NULL, 0, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        DWORD v = g_opacity;
+        RegSetValueExW(hKey, L"Opacity", 0, REG_DWORD, (BYTE*)&v, sizeof(v));
+        int pct = 100;
+        for (int i = 0; i < N_SCALE; i++) {
+            if (g_scale == SCALE_VAL[i]) { pct = SCALE_PCT[i]; break; }
+        }
+        v = (DWORD)pct;
+        RegSetValueExW(hKey, L"Scale", 0, REG_DWORD, (BYTE*)&v, sizeof(v));
+        RegCloseKey(hKey);
+    }
+}
+
+static void SetOpacityByIdx(int idx)
+{
+    if (idx < 0 || idx >= N_OPACITY) return;
+    g_opacity = OPACITY_VAL[idx];
+    ApplyOpacity();
+    SaveSettings();
+}
+
+static void SetScaleByIdx(int idx)
+{
+    if (idx < 0 || idx >= N_SCALE) return;
+    g_scale = SCALE_VAL[idx];
+    RecalcLayout();
+    SaveSettings();
+}
+
+static double cos_approx(int deg) {
+    int d = deg % 360;
+    if (d < 0) d += 360;
+    if (d == 0) return 1.0;
+    if (d == 90) return 0.0;
+    if (d == 180) return -1.0;
+    if (d == 270) return 0.0;
+    if (d < 90)  return 1.0 - (double)d / 90.0;
+    if (d < 180) return -((double)(d - 90)) / 90.0;
+    if (d < 270) return -1.0 + (double)(d - 180) / 90.0;
+    return ((double)(d - 270)) / 90.0;
+}
+static double sin_approx(int deg) {
+    int d = deg % 360;
+    if (d < 0) d += 360;
+    if (d == 0) return 0.0;
+    if (d == 90) return 1.0;
+    if (d == 180) return 0.0;
+    if (d == 270) return -1.0;
+    if (d < 90)  return (double)d / 90.0;
+    if (d < 180) return 1.0 - (double)(d - 90) / 90.0;
+    if (d < 270) return -((double)(d - 180)) / 90.0;
+    return -1.0 + (double)(d - 270) / 90.0;
+}
+
+static void DrawBackground(HDC hdc, RECT cr)
+{
+    TRIVERTEX v[2] = {
+        { cr.left, cr.top,  (COLOR16)GetRValue(COL_BG_TOP)  << 8, (COLOR16)GetGValue(COL_BG_TOP)  << 8, (COLOR16)GetBValue(COL_BG_TOP)  << 8, 0xFF00 },
+        { cr.right, cr.bottom, (COLOR16)GetRValue(COL_BG_BOT) << 8, (COLOR16)GetGValue(COL_BG_BOT) << 8, (COLOR16)GetBValue(COL_BG_BOT) << 8, 0xFF00 }
+    };
+    GRADIENT_RECT g = { 0, 1 };
+    GradientFill(hdc, v, 2, &g, 1, GRADIENT_FILL_RECT_V);
+
+    HBRUSH fb = CreateSolidBrush(COL_FRAME);
+    FrameRect(hdc, &cr, fb);
+    DeleteObject(fb);
+
+    RECT hl = { g_l.pad_x, g_l.header_h - 1, cr.right - g_l.pad_x, g_l.header_h };
+    HBRUSH hb = CreateSolidBrush(RGB(50, 55, 70));
+    FillRect(hdc, &hl, hb);
+    DeleteObject(hb);
+}
+
+static void DrawGearIcon(HDC hdc, int cx, int cy, int size, COLORREF c);
+
+static void TextOutOutlined(HDC hdc, int x, int y, const WCHAR *s, COLORREF fg, COLORREF outline)
+{
+    int len = (int)lstrlenW(s);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, outline);
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            TextOutW(hdc, x + dx, y + dy, s, len);
+        }
+    }
+    SetTextColor(hdc, fg);
+    TextOutW(hdc, x, y, s, len);
+}
+
+static void DrawTextOutlined(HDC hdc, LPCWSTR s, int c, RECT *r, UINT fmt, COLORREF fg, COLORREF outline)
+{
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, outline);
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            RECT rr = { r->left + dx, r->top + dy, r->right + dx, r->bottom + dy };
+            DrawTextW(hdc, s, c, &rr, fmt);
+        }
+    }
+    SetTextColor(hdc, fg);
+    DrawTextW(hdc, s, c, r, fmt);
+}
+
+static void DrawHeader(HDC hdc, RECT cr)
+{
+    HGDIOBJ old = SelectObject(hdc, g_fHdr);
+    TextOutOutlined(hdc, g_l.pad_x, S(14), L"SISTEMA - MONITOR DE RECURSOS PRO", COL_TEXT_HI, RGB(0,0,0));
+    SelectObject(hdc, old);
+
+    int gearSize = S(24);
+    if (gearSize < 18) gearSize = 18;
+    int gearX = cr.right - g_l.pad_x - gearSize;
+    int gearY = g_l.pad_y;
+
+    DrawGearIcon(hdc, gearX + gearSize/2, gearY + gearSize/2, gearSize - 2, COL_GEAR);
+}
+
+static void DrawFooter(HDC hdc, RECT cr)
+{
+    HGDIOBJ old = SelectObject(hdc, g_fFtr);
+    WCHAR buf[64];
+    StringCchPrintfW(buf, 64, L"Producido por RoanDev (%s)", APP_VERSION);
+    SIZE sz;
+    GetTextExtentPoint32W(hdc, buf, (int)lstrlenW(buf), &sz);
+    TextOutOutlined(hdc, cr.right - g_l.pad_x - sz.cx, cr.bottom - g_l.footer_h + S(6), buf, COL_TEXT_LOW, RGB(0,0,0));
+    SelectObject(hdc, old);
+}
+
+static void DrawNeonGlowBar(HDC hdc, int x, int y, int w, int h, float pct, COLORREF c)
+{
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+
+    int r = h / 2;
+    if (r > 16) r = 16;
+    if (r < 6) r = 6;
+
+    HBRUSH oldBr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    HPEN oldPen = (HPEN)SelectObject(hdc, GetStockObject(NULL_PEN));
+
+    HBRUSH tb = CreateSolidBrush(COL_TRACK);
+    SelectObject(hdc, tb);
+    RoundRect(hdc, x, y, x + w, y + h, r, r);
+    DeleteObject(tb);
+
+    int fw = (int)((double)w * pct / 100.0);
+    if (pct > 0.5f && fw < r * 2) fw = r * 2;
+    if (fw > w) fw = w;
+
+    if (fw > 2) {
+        GlowSetColor(c);
+        GlowDraw(hdc, x - 4, y,     fw + 8, h + 2, 28);
+        GlowDraw(hdc, x,     y + 1, fw,     h - 1, 55);
+
+        HBRUSH fb = CreateSolidBrush(c);
+        SelectObject(hdc, fb);
+        RoundRect(hdc, x, y, x + fw, y + h, r, r);
+        DeleteObject(fb);
+
+        HBRUSH hb = CreateSolidBrush(RGB(
+            (GetRValue(c) + 100) > 255 ? 255 : (GetRValue(c) + 100),
+            (GetGValue(c) + 100) > 255 ? 255 : (GetGValue(c) + 100),
+            (GetBValue(c) + 100) > 255 ? 255 : (GetBValue(c) + 100)));
+        SelectObject(hdc, hb);
+        RoundRect(hdc, x, y, x + fw, y + 2, r, r);
+        DeleteObject(hb);
+    }
+
+    HPEN pen = CreatePen(PS_INSIDEFRAME, 2, c);
+    SelectObject(hdc, pen);
+    SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    RoundRect(hdc, x, y, x + w, y + h, r, r);
+    DeleteObject(pen);
+
+    SelectObject(hdc, oldBr);
+    SelectObject(hdc, oldPen);
+}
+
+static void DrawSection(HDC hdc, int x, int y, int w, const WCHAR *label,
+                        float pct, const WCHAR *subtitle, COLORREF c, const WCHAR *displayPct)
+{
+    HGDIOBJ old;
+    WCHAR title[64];
+
+    StringCchPrintfW(title, 64, L"%s - %s", label, displayPct);
+
+    old = SelectObject(hdc, g_fTtl);
+    TextOutOutlined(hdc, x, y, title, COL_TEXT_HI, RGB(0,0,0));
+    SelectObject(hdc, old);
+
+    old = SelectObject(hdc, g_fSub);
+    SetTextColor(hdc, COL_TEXT_DIM);
+    SetBkMode(hdc, TRANSPARENT);
+    TextOutW(hdc, x, y + S(30), subtitle, (int)lstrlenW(subtitle));
+    SelectObject(hdc, old);
+
+    int barY = y + S(52);
+    int barH = g_l.bar_h;
+    DrawNeonGlowBar(hdc, x, barY, w, barH, pct, c);
+
+    if (pct >= 1.0f) {
+        WCHAR barText[16];
+        StringCchPrintfW(barText, 16, L"%3.0f%%", pct);
+        old = SelectObject(hdc, g_fBar);
+        TextOutOutlined(hdc, x + S(10), barY + S(3), barText, RGB(255,255,255), RGB(0,0,0));
+        SelectObject(hdc, old);
+    }
+}
+
+static void DrawGPUSection(HDC hdc, int x, int y, int w, float pct)
+{
+    int barH = g_l.bar_h + S(8);
+    DrawNeonGlowBar(hdc, x, y, w, barH, pct, COL_GPU);
+
+    HGDIOBJ old = SelectObject(hdc, g_fTtl);
+    WCHAR buf[64];
+    StringCchPrintfW(buf, 64, L"GPU - %3.0f%% Carga", pct);
+    RECT tr = { x + 14, y, x + w, y + barH };
+    DrawTextOutlined(hdc, buf, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE, RGB(255,255,255), RGB(0,0,0));
+    SelectObject(hdc, old);
+}
+
+static void DrawVramSection(HDC hdc, int x, int y, int w, float pct, DWORD usedMB, DWORD totalMB)
+{
+    int barH = g_l.bar_h;
+
+    /* use the same neon glow bar as other sections */
+    DrawNeonGlowBar(hdc, x, y, w, barH, pct, COL_VRAM);
+
+    /* pill inside the bar on the left */
+    int pillW = S(70); if (pillW < 40) pillW = 40;
+    int pillX = x + S(4);
+    int pillGap = S(3);
+    RECT pr = { pillX, y + pillGap, pillX + pillW, y + barH - pillGap };
+    HBRUSH pb = CreateSolidBrush(COL_VRAM);
+    FillRect(hdc, &pr, pb);
+    DeleteObject(pb);
+
+    HGDIOBJ old = SelectObject(hdc, g_fBar);
+    WCHAR pbuf[16];
+    StringCchPrintfW(pbuf, 16, L"%3.0f%%", pct);
+    DrawTextOutlined(hdc, pbuf, -1, &pr, DT_CENTER | DT_VCENTER | DT_SINGLELINE, RGB(255,255,255), RGB(0,0,0));
+    SelectObject(hdc, old);
+
+    /* text to the right of the pill inside the same bar */
+    old = SelectObject(hdc, g_fSub);
+    WCHAR tbuf[96];
+    double usedGB = (double)usedMB / 1024.0;
+    double totalGB = (double)totalMB / 1024.0;
+    StringCchPrintfW(tbuf, 96, L"VRAM Usada - %3.0f%% (%.1fGB / %.0fGB)", pct, usedGB, totalGB);
+    TextOutOutlined(hdc, pillX + pillW + S(10), y + pillGap + S(1), tbuf, COL_TEXT_HI, RGB(0,0,0));
+    SelectObject(hdc, old);
+}
+
+static void DrawGearIcon(HDC hdc, int cx, int cy, int size, COLORREF c)
+{
+    int R = size / 2;
+    int rHole = R * 4 / 10; if (rHole < 2) rHole = 2;
+    int rInner = R * 7 / 10;
+
+    /* hexagon points */
+    POINT pts[6];
+    static const double hc[6] = { 1.0, 0.5, -0.5, -1.0, -0.5, 0.5 };
+    static const double hs[6] = { 0.0, 0.8660254037844386, 0.8660254037844386,
+                                  0.0, -0.8660254037844386, -0.8660254037844386 };
+    for (int i = 0; i < 6; i++) {
+        pts[i].x = cx + (int)(hc[i] * (double)R);
+        pts[i].y = cy + (int)(hs[i] * (double)R);
+    }
+
+    HBRUSH b = CreateSolidBrush(c);
+    HPEN pn = CreatePen(PS_SOLID, 1, c);
+    HBRUSH ob = (HBRUSH)SelectObject(hdc, b);
+    HPEN op = (HPEN)SelectObject(hdc, pn);
+
+    /* outer hexagon */
+    Polygon(hdc, pts, 6);
+
+    /* six rounded teeth as small ellipses at each vertex */
+    for (int i = 0; i < 6; i++) {
+        int tx = (pts[i].x - cx) * rInner / R + cx;
+        int ty = (pts[i].y - cy) * rInner / R + cy;
+        int td = R / 4; if (td < 2) td = 2;
+        Ellipse(hdc, tx - td, ty - td, tx + td, ty + td);
+    }
+
+    /* central hole */
+    HBRUSH hb = CreateSolidBrush(COL_BG_TOP);
+    HBRUSH oh = (HBRUSH)SelectObject(hdc, hb);
+    HPEN hpen = CreatePen(PS_SOLID, 1, COL_BG_TOP);
+    HPEN oph = (HPEN)SelectObject(hdc, hpen);
+    Ellipse(hdc, cx - rHole, cy - rHole, cx + rHole, cy + rHole);
+    SelectObject(hdc, oh);
+    SelectObject(hdc, oph);
+    DeleteObject(hb);
+    DeleteObject(hpen);
+
+    SelectObject(hdc, ob);
+    SelectObject(hdc, op);
+    DeleteObject(b);
+    DeleteObject(pn);
+}
+
+static void DrawArrow(HDC hdc, int cx, int cy, int size, int up, COLORREF c)
+{
+    HBRUSH b = CreateSolidBrush(c);
+    HPEN pn = CreatePen(PS_INSIDEFRAME, 1, c);
+    HBRUSH ob = (HBRUSH)SelectObject(hdc, b);
+    HPEN op = (HPEN)SelectObject(hdc, pn);
+    POINT pts[3];
+    int h = size / 2;
+    if (up) {
+        pts[0].x = cx;     pts[0].y = cy - h;
+        pts[1].x = cx - h; pts[1].y = cy + h;
+        pts[2].x = cx + h; pts[2].y = cy + h;
+    } else {
+        pts[0].x = cx - h; pts[0].y = cy - h;
+        pts[1].x = cx + h; pts[1].y = cy - h;
+        pts[2].x = cx;     pts[2].y = cy + h;
+    }
+    Polygon(hdc, pts, 3);
+    SelectObject(hdc, ob);
+    SelectObject(hdc, op);
+    DeleteObject(b);
+    DeleteObject(pn);
+}
+
+static void DrawNetSection(HDC hdc, int x, int y, int w, DWORD downBps, DWORD upBps)
+{
+    int barH = g_l.bar_h + S(16);
+    DrawNeonGlowBar(hdc, x, y, w, barH, 100, COL_NET);
+
+    HGDIOBJ old = SelectObject(hdc, g_fNet);
+    SetTextColor(hdc, RGB(255, 255, 255));
+    SetBkMode(hdc, TRANSPARENT);
+
+    double downMbps = (double)downBps / 1000000.0;
+    double upMbps = (double)upBps / 1000000.0;
+
+    int cy = y + barH / 2;
+    int arrSize = S(28);
+    if (arrSize < 16) arrSize = 16;
+
+    int leftUpX = x + S(70);
+    int leftDnX = x + S(120);
+    int rightDnX = x + w - S(120);
+    int rightUpX = x + w - S(70);
+
+    DrawArrow(hdc, leftUpX,  cy, arrSize, 1, RGB(255, 70, 70));
+    DrawArrow(hdc, leftDnX,  cy, arrSize, 0, RGB(60, 220, 110));
+    DrawArrow(hdc, rightDnX, cy, arrSize, 0, RGB(60, 220, 110));
+    DrawArrow(hdc, rightUpX, cy, arrSize, 1, RGB(255, 70, 70));
+
+    RECT tr = { leftDnX + S(25), y, rightDnX - S(25), y + barH };
+    WCHAR tbuf[128];
+    StringCchPrintfW(tbuf, 128, L"Bajada: %.0f Mbps  |  Subida: %.0f Mbps",
+                     downMbps, upMbps);
+    DrawTextOutlined(hdc, tbuf, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE, RGB(255,255,255), RGB(0,0,0));
+    SelectObject(hdc, old);
+}
+
+static void Render(HWND hWnd)
+{
+    PAINTSTRUCT ps;
+    HDC hdc = BeginPaint(hWnd, &ps);
+    RECT cr; GetClientRect(hWnd, &cr);
+
+    SetBkMode(hdc, TRANSPARENT);
+
+    DrawBackground(hdc, cr);
+    DrawHeader(hdc, cr);
+    DrawFooter(hdc, cr);
+
+    int x = g_l.pad_x;
+    int w = cr.right - 2 * g_l.pad_x;
+    int y = g_l.header_h + g_l.pad_y;
+
+    WCHAR pctTxt[16];
+
+    StringCchPrintfW(pctTxt, 16, L"%3.0f%%", g_cpu);
+    DrawSection(hdc, x, y, w, L"CPU", g_cpu, L"Uso total de núcleos", COL_CPU, pctTxt);
+    y += g_l.sec_h;
+
+    double usedGB = (double)g_ramUsed / 1024.0;
+    double totalGB = (double)g_ramTotal / 1024.0;
+    WCHAR ramSub[64];
+    StringCchPrintfW(ramSub, 64, L"Uso de memoria (%.1fGB / %.0fGB)", usedGB, totalGB);
+    StringCchPrintfW(pctTxt, 16, L"%3.0f%%", g_ramPct);
+    DrawSection(hdc, x, y, w, L"RAM", g_ramPct, ramSub, COL_RAM, pctTxt);
+    y += g_l.sec_h;
+
+    if (g_gpuOK && g_gpu >= 0) {
+        DrawGPUSection(hdc, x, y, w, g_gpu);
+        y += g_l.bar_h + S(8) + S(8);
+        if (g_vramOK && g_vramPct >= 0 && g_vramTotal > 0) {
+            DrawVramSection(hdc, x, y, w, g_vramPct, g_vramUsed, g_vramTotal);
+            y += g_l.bar_h + S(8);
+        } else {
+            y += S(12);
+        }
+    }
+
+    if (g_netOK) {
+        DrawNetSection(hdc, x, y, w, g_netDownBps, g_netUpBps);
+    }
+
+    EndPaint(hWnd, &ps);
 }
 
 static void UpdateTrayTip(void)
 {
-    WCHAR tip[128];
-    if (g_gpuOK && g_gpu >= 0)
-        StringCchPrintfW(tip, 128, L"CPU %3.0f%% | RAM %lu/%lu GB (%3.0f%%) | GPU %3.0f%%",
-                         g_cpu, g_ramUsed, g_ramTotal, g_ramPct, g_gpu);
-    else
-        StringCchPrintfW(tip, 128, L"CPU %3.0f%% | RAM %lu/%lu GB (%3.0f%%) | GPU N/A",
-                         g_cpu, g_ramUsed, g_ramTotal, g_ramPct);
+    WCHAR tip[160];
+    double ud = (double)g_ramUsed / 1024.0;
+    double ut = (double)g_ramTotal / 1024.0;
+    if (g_gpuOK && g_gpu >= 0 && g_netOK) {
+        StringCchPrintfW(tip, 160,
+            L"CPU %3.0f%% | RAM %.1f/%.0fGB (%3.0f%%) | GPU %3.0f%% | \x2193 %.0f Mbps \x2191 %.0f Mbps",
+            g_cpu, ud, ut, g_ramPct, g_gpu, (double)g_netDownBps/1e6, (double)g_netUpBps/1e6);
+    } else if (g_gpuOK && g_gpu >= 0) {
+        StringCchPrintfW(tip, 160, L"CPU %3.0f%% | RAM %.1f/%.0fGB (%3.0f%%) | GPU %3.0f%%",
+            g_cpu, ud, ut, g_ramPct, g_gpu);
+    } else if (g_netOK) {
+        StringCchPrintfW(tip, 160, L"CPU %3.0f%% | RAM %.1f/%.0fGB (%3.0f%%) | \x2193 %.0f Mbps \x2191 %.0f Mbps",
+            g_cpu, ud, ut, g_ramPct, (double)g_netDownBps/1e6, (double)g_netUpBps/1e6);
+    } else {
+        StringCchPrintfW(tip, 160, L"CPU %3.0f%% | RAM %.1f/%.0fGB (%3.0f%%)",
+            g_cpu, ud, ut, g_ramPct);
+    }
     StringCchCopyW(g_nid.szTip, 128, tip);
     Shell_NotifyIconW(NIM_MODIFY, &g_nid);
 }
@@ -298,79 +1090,83 @@ static void UpdateData(void)
     g_cpu = GetCPU();
     GetRAM();
     if (g_gpuOK) g_gpu = GetGPU();
+    GetVRAM();
+    SampleNet();
     if (g_nid.hWnd) UpdateTrayTip();
-    InvalidateRect(g_hWnd, NULL, FALSE);
-}
 
-static void Render(HWND hWnd)
-{
-    PAINTSTRUCT ps;
-    HDC hdc = BeginPaint(hWnd, &ps);
-    RECT cr; GetClientRect(hWnd, &cr);
-    HDC mdc = CreateCompatibleDC(hdc);
-    HBITMAP bmp = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
-    HGDIOBJ ob = SelectObject(mdc, bmp);
-
-    HBRUSH bg = CreateSolidBrush(RGB(20, 20, 30));
-    FillRect(mdc, &cr, bg);
-    DeleteObject(bg);
-
-    HFONT fnt = CreateFontW(-FONT_SZ, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                            PROOF_QUALITY, FIXED_PITCH | FF_DONTCARE, L"Consolas");
-    HGDIOBJ of = SelectObject(mdc, fnt);
-    SetBkMode(mdc, TRANSPARENT);
-
-    HBRUSH brd = CreateSolidBrush(RGB(60, 60, 80));
-    FrameRect(mdc, &cr, brd);
-    DeleteObject(brd);
-
-    WCHAR buf[64];
-    float vals[3] = { g_cpu, g_ramPct, g_gpu };
-    const WCHAR *lbl[3] = { L"CPU", L"RAM", L"GPU" };
-    int y;
-    for (int i = 0; i < 3; i++) {
-        y = PAD_Y + i * LINE_H;
-        SetTextColor(mdc, RGB(200, 200, 225));
-        TextOutW(mdc, PAD_X, y + 3, lbl[i], 3);
-        if (i == 2 && (!g_gpuOK || vals[i] < 0)) {
-            SetTextColor(mdc, RGB(130, 130, 140));
-            TextOutW(mdc, LABEL_W, y + 3, L"N/A", 3);
-            continue;
-        }
-        StringCchPrintfW(buf, 64, L"%3.0f%%", vals[i]);
-        SetTextColor(mdc, ColorPct(vals[i]));
-        TextOutW(mdc, LABEL_W, y + 3, buf, 5);
-        DrawBar(mdc, BAR_X, y + (LINE_H - BAR_H) / 2, BAR_W, BAR_H, vals[i]);
+    int newH = ComputeLayout();
+    if (newH != g_currentH && g_hWnd) {
+        g_currentH = newH;
+        RECT rc; GetWindowRect(g_hWnd, &rc);
+        SetWindowPos(g_hWnd, NULL, rc.left, rc.top, g_l.width, newH,
+                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        ApplyOpacity();
     }
 
-    HFONT fSm = CreateFontW(-7, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                            PROOF_QUALITY, FIXED_PITCH | FF_DONTCARE, L"Consolas");
-    HGDIOBJ ofSm = SelectObject(mdc, fSm);
-    SetTextColor(mdc, RGB(80, 80, 100));
-    RECT rc = cr;
-    rc.top = cr.bottom - 11;
-    DrawTextW(mdc, L"Monitor by RoanDev", -1, &rc, DT_CENTER | DT_BOTTOM | DT_SINGLELINE);
-    SelectObject(mdc, ofSm);
-    DeleteObject(fSm);
-
-    BitBlt(hdc, 0, 0, cr.right, cr.bottom, mdc, 0, 0, SRCCOPY);
-    SelectObject(mdc, ob); SelectObject(mdc, of);
-    DeleteObject(fnt); DeleteObject(bmp); DeleteDC(mdc);
-    EndPaint(hWnd, &ps);
+    InvalidateRect(g_hWnd, NULL, FALSE);
+    UpdateWindow(g_hWnd);
 }
 
-static void ShowMenu(HWND hWnd, int x, int y)
+static void ShowSettingsMenu(HWND hWnd, int x, int y)
 {
     HMENU m = CreatePopupMenu();
+    HMENU op = CreatePopupMenu();
+    HMENU sc = CreatePopupMenu();
+
+    int curOpIdx = 0;
+    for (int i = 0; i < N_OPACITY; i++) {
+        if (g_opacity == OPACITY_VAL[i]) { curOpIdx = i; break; }
+    }
+    WCHAR opLbl[16];
+    for (int i = 0; i < N_OPACITY; i++) {
+        StringCchPrintfW(opLbl, 16, L"%d%%", OPACITY_PCT[i]);
+        AppendMenuW(op, MF_STRING | (curOpIdx == i ? MF_CHECKED : 0),
+                    ID_OPACITY_100 + i, opLbl);
+    }
+
+    int curScIdx = 0;
+    for (int i = 0; i < N_SCALE; i++) {
+        if (g_scale == SCALE_VAL[i]) { curScIdx = i; break; }
+    }
+    WCHAR scLbl[16];
+    for (int i = 0; i < N_SCALE; i++) {
+        StringCchPrintfW(scLbl, 16, L"%d%%", SCALE_PCT[i]);
+        AppendMenuW(sc, MF_STRING | (curScIdx == i ? MF_CHECKED : 0),
+                    ID_SCALE_50 + i, scLbl);
+    }
+
+    AppendMenuW(m, MF_POPUP, (UINT_PTR)op, L"Opacidad");
+    AppendMenuW(m, MF_POPUP, (UINT_PTR)sc, L"Escala");
+    AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     AppendMenuW(m, MF_STRING | (g_locked ? MF_CHECKED : 0), ID_LOCK,
                 g_locked ? L"Desfijar posición" : L"Fijar posición");
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     AppendMenuW(m, MF_STRING, ID_EXIT, L"Salir");
+
     SetForegroundWindow(hWnd);
     TrackPopupMenu(m, TPM_LEFTALIGN | TPM_BOTTOMALIGN, x, y, 0, hWnd, NULL);
     DestroyMenu(m);
+}
+
+static void ShowContextMenu(HWND hWnd, int x, int y)
+{
+    HMENU m = CreatePopupMenu();
+    AppendMenuW(m, MF_STRING, ID_LOCK,
+                g_locked ? L"Desfijar posición" : L"Fijar posición");
+    AppendMenuW(m, MF_STRING, 130, L"Configuración...");
+    AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuW(m, MF_STRING, ID_EXIT, L"Salir");
+    SetForegroundWindow(hWnd);
+    int cmd = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_BOTTOMALIGN | TPM_RETURNCMD, x, y, 0, hWnd, NULL);
+    DestroyMenu(m);
+    if (cmd == 130) {
+        ShowSettingsMenu(hWnd, x, y);
+    } else if (cmd == ID_LOCK) {
+        g_locked = !g_locked;
+    } else if (cmd == ID_EXIT) {
+        g_running = 0;
+        DestroyWindow(hWnd);
+    }
 }
 
 static void ToggleLock(void)
@@ -387,7 +1183,7 @@ static void TrayAdd(HWND hWnd, HICON hIcon)
     g_nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     g_nid.uCallbackMessage = WM_TRAY;
     g_nid.hIcon = hIcon;
-    StringCchCopyW(g_nid.szTip, 128, L"Monitor CPU/RAM/GPU (clic der.)");
+    StringCchCopyW(g_nid.szTip, 128, L"Monitor (clic der.)");
     Shell_NotifyIconW(NIM_ADD, &g_nid);
     g_nid.uVersion = NOTIFYICON_VERSION_4;
     Shell_NotifyIconW(NIM_SETVERSION, &g_nid);
@@ -420,11 +1216,53 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 1;
 
     case WM_LBUTTONDOWN:
-        if (!g_locked) {
+        {
+            int mx = GET_X_LPARAM(lParam);
+            int my = GET_Y_LPARAM(lParam);
+            RECT cr;
+            GetClientRect(hWnd, &cr);
+            int inGear = (mx >= cr.right - 36 && mx <= cr.right - 4 &&
+                          my >= 4 && my <= 36);
+            if (inGear) {
+                g_gearDown = 1;
+                SetCapture(hWnd);
+            } else if (!g_locked) {
+                ReleaseCapture();
+                POINT pt = { mx, my };
+                ClientToScreen(hWnd, &pt);
+                SendMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, MAKELPARAM(pt.x, pt.y));
+            }
+        }
+        return 0;
+
+    case WM_MOUSEMOVE:
+        if (g_gearDown) {
+            int mx = GET_X_LPARAM(lParam);
+            int my = GET_Y_LPARAM(lParam);
+            RECT cr;
+            GetClientRect(hWnd, &cr);
+            if (mx < cr.right - 36 || mx > cr.right - 4 ||
+                my < 4 || my > 36) {
+                g_gearDown = 0;
+                ReleaseCapture();
+            }
+        }
+        return 0;
+
+    case WM_LBUTTONUP:
+        if (g_gearDown) {
+            g_gearDown = 0;
             ReleaseCapture();
-            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-            ClientToScreen(hWnd, &pt);
-            SendMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, MAKELPARAM(pt.x, pt.y));
+            int mx = GET_X_LPARAM(lParam);
+            int my = GET_Y_LPARAM(lParam);
+            RECT cr;
+            GetClientRect(hWnd, &cr);
+            if (mx >= cr.right - 36 && mx <= cr.right - 4 &&
+                my >= 4 && my <= 36) {
+                POINT pt;
+                GetCursorPos(&pt);
+                ShowSettingsMenu(hWnd, pt.x, pt.y);
+            }
         }
         return 0;
 
@@ -432,7 +1270,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         {
             POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
             ClientToScreen(hWnd, &pt);
-            ShowMenu(hWnd, pt.x, pt.y);
+            ShowContextMenu(hWnd, pt.x, pt.y);
         }
         return 0;
 
@@ -440,17 +1278,25 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         if (lParam == WM_RBUTTONUP) {
             POINT pt;
             GetCursorPos(&pt);
-            ShowMenu(hWnd, pt.x, pt.y);
+            ShowContextMenu(hWnd, pt.x, pt.y);
         } else if (lParam == WM_LBUTTONDBLCLK) {
             ToggleLock();
         }
         return 0;
 
     case WM_COMMAND:
-        if (LOWORD(wParam) == ID_LOCK) ToggleLock();
-        else if (LOWORD(wParam) == ID_EXIT) {
-            g_running = 0;
-            DestroyWindow(hWnd);
+        {
+            int id = LOWORD(wParam);
+            if (id == ID_LOCK) {
+                ToggleLock();
+            } else if (id == ID_EXIT) {
+                g_running = 0;
+                DestroyWindow(hWnd);
+            } else if (id >= ID_OPACITY_100 && id <= ID_OPACITY_50) {
+                SetOpacityByIdx(id - ID_OPACITY_100);
+            } else if (id >= ID_SCALE_50 && id <= ID_SCALE_150) {
+                SetScaleByIdx(id - ID_SCALE_50);
+            }
         }
         return 0;
 
@@ -460,6 +1306,9 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         if (g_iconCustom) DestroyIcon(g_hIcon);
         CPUUninit();
         GPUUninit();
+        GPUVramUninit();
+        NetUninit();
+        FontsUninit();
         PostQuitMessage(0);
         return 0;
 
@@ -495,18 +1344,19 @@ static void LoadPosition(int *px, int *py)
 {
     int sw = GetSystemMetrics(SM_CXSCREEN);
     int sh = GetSystemMetrics(SM_CYSCREEN);
-    *px = sw - WIDTH  - 20;
-    *py = sh - HEIGHT - 50;
+    int minH = g_l.header_h + g_l.pad_y * 2 + g_l.sec_h * 2 + g_l.footer_h;
+    *px = sw - g_l.width  - 20;
+    *py = sh - minH - 50;
     HKEY hKey;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RoanDev\\MonitorOverlay",
                       0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS) {
         DWORD v, sz = sizeof(DWORD);
         if (RegQueryValueExW(hKey, L"PosX", NULL, NULL, (BYTE*)&v, &sz) == ERROR_SUCCESS) {
-            if ((int)v >= 0 && (int)v <= sw - WIDTH) *px = (int)v;
+            if ((int)v >= 0 && (int)v <= sw - g_l.width) *px = (int)v;
         }
         sz = sizeof(DWORD);
         if (RegQueryValueExW(hKey, L"PosY", NULL, NULL, (BYTE*)&v, &sz) == ERROR_SUCCESS) {
-            if ((int)v >= 0 && (int)v <= sh - HEIGHT) *py = (int)v;
+            if ((int)v >= 0 && (int)v <= sh - minH) *py = (int)v;
         }
         RegCloseKey(hKey);
     }
@@ -531,8 +1381,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE hPrev, LPWSTR cmd, int show)
         if (g_hIcon) g_iconCustom = 1;
         else g_hIcon = LoadIconW(NULL, (LPCWSTR)IDI_APPLICATION);
     }
+
+    LoadSettings();
+    RecalcLayout();
     CPUInit();
     GPUInit();
+    GPUVramInit();
+    NetInit();
 
     WNDCLASSW wc = {0};
     wc.style      = CS_HREDRAW | CS_VREDRAW;
@@ -542,18 +1397,28 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE hPrev, LPWSTR cmd, int show)
     wc.hCursor    = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = NULL;
     wc.lpszClassName = L"MonitorOverlay";
-    if (!RegisterClassW(&wc)) { CPUUninit(); GPUUninit(); return 1; }
+    if (!RegisterClassW(&wc)) {
+        CPUUninit(); GPUUninit(); GPUVramUninit(); NetUninit();
+        FontsUninit();
+        return 1;
+    }
 
     int px, py;
     LoadPosition(&px, &py);
 
+    g_currentH = ComputeLayout();
+
     g_hWnd = CreateWindowExW(
         WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         L"MonitorOverlay", L"Monitor", WS_POPUP,
-        px, py, WIDTH, HEIGHT, NULL, NULL, inst, NULL);
-    if (!g_hWnd) { CPUUninit(); GPUUninit(); return 1; }
+        px, py, g_l.width, g_currentH, NULL, NULL, inst, NULL);
+    if (!g_hWnd) {
+        CPUUninit(); GPUUninit(); GPUVramUninit(); NetUninit();
+        FontsUninit();
+        return 1;
+    }
 
-    SetLayeredWindowAttributes(g_hWnd, 0, 210, LWA_ALPHA);
+    SetLayeredWindowAttributes(g_hWnd, 0, g_opacity, LWA_ALPHA);
     TrayAdd(g_hWnd, g_hIcon);
     ShowWindow(g_hWnd, SW_SHOW);
     UpdateData();

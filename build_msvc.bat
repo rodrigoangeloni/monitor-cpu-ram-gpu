@@ -54,7 +54,7 @@ if errorlevel 1 (
 echo [2/3] Compilando monitor.c (MSVC x64, optimizado para tamano)...
 
 :: Compilar con flags de minimo tamano
-cl /nologo /utf-8 /O1 /GL /MT /EHs-c- /W3 /wd4100 /wd4101 /Fo"%~dp0monitor.obj" "%~dp0monitor.c" /link /SUBSYSTEM:WINDOWS /LTCG /NOLOGO user32.lib gdi32.lib shell32.lib advapi32.lib pdh.lib !ICON_RES! /MERGE:.rdata=.text /MERGE:.data=.text /SECTION:.text,ERW /EMITPOGOPHASEINFO /STACK:65536
+cl /nologo /utf-8 /O1 /GL /MT /EHs-c- /W3 /wd4100 /wd4101 /Fo"%~dp0monitor.obj" "%~dp0monitor.c" /link /SUBSYSTEM:WINDOWS /LTCG /NOLOGO user32.lib gdi32.lib shell32.lib advapi32.lib pdh.lib iphlpapi.lib msimg32.lib dxgi.lib d3d11.lib !ICON_RES! /MERGE:.rdata=.text /MERGE:.data=.text /SECTION:.text,ERW /EMITPOGOPHASEINFO /STACK:65536
 
 if errorlevel 1 (
     echo [ERROR] Compilacion fallida

@@ -95,6 +95,7 @@ static int      g_gpuOK;
 static ULONGLONG g_gpuLastTick;
 static ULONGLONG g_gpuReenumTick;
 
+#ifdef _DEBUG
 static void GPUWriteDebug(const WCHAR *msg)
 {
     HANDLE h = CreateFileW(L"gpu_debug.txt", GENERIC_WRITE, 0, NULL,
@@ -106,11 +107,14 @@ static void GPUWriteDebug(const WCHAR *msg)
         CloseHandle(h);
     }
 }
+#endif
 
 static int GPUReenum(void)
 {
     // save old prev values keyed by path
+#ifdef _DEBUG
     GPUWriteDebug(L"  reenum\n");
+#endif
     DWORD oldCount = g_gpuCount;
     LPWSTR *oldPaths = g_gpuPaths;
     ULONGLONG *oldPrev = g_gpuPrev;
@@ -182,8 +186,10 @@ static void GPUInit(void)
 {
     g_gpuOK = 0; g_hGPUQ = NULL; g_hGPUctrs = NULL; g_gpuPaths = NULL; g_gpuPrev = NULL;
     g_gpuCount = 0; g_gpuLastTick = 0; g_gpuReenumTick = GetTickCount64();
+#ifdef _DEBUG
     DeleteFileW(L"gpu_debug.txt");
     GPUWriteDebug(L"GPUInit start\n");
+#endif
     if (GPUReenum()) g_gpuOK = 1;
 }
 
@@ -215,8 +221,10 @@ static float GetGPU(void)
     if (elapsed == 0) return g_gpu;
 
     float max3D = 0, maxAll = 0;
+#ifdef _DEBUG
     static int dbgOnce = 0;
     WCHAR gdbg[512]; int gpos = 0;
+#endif
 
     for (DWORD i = 0; i < g_gpuCount; i++) {
         if (!g_hGPUctrs[i]) continue;
@@ -233,6 +241,7 @@ static float GetGPU(void)
         g_gpuPrev[i] = val;
     }
 
+#ifdef _DEBUG
     if (!dbgOnce) {
         gpos = StringCchPrintfW(gdbg, 512, L"GetGPU: %lu engs max3D=%.0f%% maxAll=%.0f%% elapsed=%llu\n",
             g_gpuCount, max3D, maxAll, elapsed);
@@ -241,6 +250,7 @@ static float GetGPU(void)
         GPUWriteDebug(gdbg);
         dbgOnce = 1;
     }
+#endif
 
     float r = max3D > 0 ? max3D : maxAll;
     if (r > 100) r = 100;

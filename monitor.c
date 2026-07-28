@@ -764,7 +764,7 @@ static void DrawHeader(HDC hdc, RECT cr)
     int gearSize = S(24);
     if (gearSize < 18) gearSize = 18;
     int gearX = cr.right - g_l.pad_x - gearSize;
-    int gearY = g_l.pad_y;
+    int gearY = S(4);
 
     /* Unicode gear symbol (U+2699) from Segoe UI Symbol, centered */
     old = SelectObject(hdc, g_fGear);
@@ -1190,7 +1190,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             GetClientRect(hWnd, &cr);
             int gearSize = S(24); if (gearSize < 18) gearSize = 18;
             int gearX = cr.right - g_l.pad_x - gearSize;
-            int gearY = g_l.pad_y;
+            int gearY = S(4);
             int inGear = (mx >= gearX && mx <= gearX + gearSize &&
                           my >= gearY && my <= gearY + gearSize);
             if (inGear) {
@@ -1213,7 +1213,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             GetClientRect(hWnd, &cr);
             int gearSize = S(24); if (gearSize < 18) gearSize = 18;
             int gearX = cr.right - g_l.pad_x - gearSize;
-            int gearY = g_l.pad_y;
+            int gearY = S(4);
             if (mx < gearX || mx > gearX + gearSize ||
                 my < gearY || my > gearY + gearSize) {
                 g_gearDown = 0;
@@ -1232,7 +1232,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             GetClientRect(hWnd, &cr);
             int gearSize = S(24); if (gearSize < 18) gearSize = 18;
             int gearX = cr.right - g_l.pad_x - gearSize;
-            int gearY = g_l.pad_y;
+            int gearY = S(4);
             if (mx >= gearX && mx <= gearX + gearSize &&
                 my >= gearY && my <= gearY + gearSize) {
                 POINT pt;

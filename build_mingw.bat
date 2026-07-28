@@ -27,7 +27,7 @@ if not defined MINGW (
 for %%f in ("%MINGW%") do set BIN_DIR=%%~dpf
 
 echo [1/3] Compilando icono...
-"%BIN_DIR%windres.exe" "%~dp0icon.rc" -o "%~dp0icon.o" 2>nul
+"%BIN_DIR%windres.exe" "%~dp0icon.rc" -o "%~dp0icon.o"
 if errorlevel 1 (
     echo [WARN] No se pudo compilar icono, continuando sin el
     set ICON_RES=

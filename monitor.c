@@ -761,18 +761,22 @@ static void DrawHeader(HDC hdc, RECT cr)
     TextOutOutlined(hdc, g_l.pad_x, S(4), L"MONITOR", COL_TEXT_HI, RGB(0,0,0));
     SelectObject(hdc, old);
 
-    int gearSize = S(24);
-    if (gearSize < 18) gearSize = 18;
-    int gearX = cr.right - g_l.pad_x - gearSize;
-    int gearY = S(2);
-
-    /* Unicode gear symbol (U+2699) from Segoe UI Symbol, centered */
+    /* Unicode gear symbol (U+2699), aligned by baseline with the MONITOR text */
     old = SelectObject(hdc, g_fGear);
-    SetTextColor(hdc, COL_GEAR);
-    SetBkMode(hdc, TRANSPARENT);
     WCHAR gearChar = 0x2699;
-    RECT gearRect = { gearX, gearY, gearX + gearSize, gearY + gearSize };
-    DrawTextW(hdc, &gearChar, 1, &gearRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SIZE gearSz;
+    GetTextExtentPoint32W(hdc, &gearChar, 1, &gearSz);
+    int gearX = cr.right - g_l.pad_x - gearSz.cx;
+    int gearY = S(4);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, COL_GEAR);
+    TextOutW(hdc, gearX, gearY, &gearChar, 1);
+    TextOutW(hdc, gearX - 1, gearY, &gearChar, 1);
+    TextOutW(hdc, gearX + 1, gearY, &gearChar, 1);
+    TextOutW(hdc, gearX, gearY - 1, &gearChar, 1);
+    TextOutW(hdc, gearX, gearY + 1, &gearChar, 1);
+    SetTextColor(hdc, COL_GEAR);
+    TextOutW(hdc, gearX, gearY, &gearChar, 1);
     SelectObject(hdc, old);
 }
 
@@ -1188,9 +1192,9 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             int my = GET_Y_LPARAM(lParam);
             RECT cr;
             GetClientRect(hWnd, &cr);
-            int gearSize = S(24); if (gearSize < 18) gearSize = 18;
+            int gearSize = S(20); if (gearSize < 14) gearSize = 14;
             int gearX = cr.right - g_l.pad_x - gearSize;
-            int gearY = S(1);
+            int gearY = S(2);
             int inGear = (mx >= gearX && mx <= gearX + gearSize &&
                           my >= gearY && my <= gearY + gearSize);
             if (inGear) {
@@ -1211,9 +1215,9 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             int my = GET_Y_LPARAM(lParam);
             RECT cr;
             GetClientRect(hWnd, &cr);
-            int gearSize = S(24); if (gearSize < 18) gearSize = 18;
+            int gearSize = S(20); if (gearSize < 14) gearSize = 14;
             int gearX = cr.right - g_l.pad_x - gearSize;
-            int gearY = S(1);
+            int gearY = S(2);
             if (mx < gearX || mx > gearX + gearSize ||
                 my < gearY || my > gearY + gearSize) {
                 g_gearDown = 0;
@@ -1230,9 +1234,9 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             int my = GET_Y_LPARAM(lParam);
             RECT cr;
             GetClientRect(hWnd, &cr);
-            int gearSize = S(24); if (gearSize < 18) gearSize = 18;
+            int gearSize = S(20); if (gearSize < 14) gearSize = 14;
             int gearX = cr.right - g_l.pad_x - gearSize;
-            int gearY = S(1);
+            int gearY = S(2);
             if (mx >= gearX && mx <= gearX + gearSize &&
                 my >= gearY && my <= gearY + gearSize) {
                 POINT pt;

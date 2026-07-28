@@ -757,26 +757,29 @@ static void DrawTextOutlined(HDC hdc, LPCWSTR s, int c, RECT *r, UINT fmt, COLOR
 
 static void DrawHeader(HDC hdc, RECT cr)
 {
+    /* Measure MONITOR text metrics */
     HGDIOBJ old = SelectObject(hdc, g_fHdr);
+    TEXTMETRIC tmHdr;
+    GetTextMetrics(hdc, &tmHdr);
+    int hdrAscent = tmHdr.tmAscent;
+    int hdrCenter = S(4) - hdrAscent / 2;  /* visual center of MONITOR */
+    SelectObject(hdc, old);
+
+    old = SelectObject(hdc, g_fHdr);
     TextOutOutlined(hdc, g_l.pad_x, S(4), L"MONITOR", COL_TEXT_HI, RGB(0,0,0));
     SelectObject(hdc, old);
 
-    /* Unicode gear symbol (U+2699), aligned by baseline with the MONITOR text */
+    /* Gear icon aligned so its visual center matches MONITOR's visual center */
     old = SelectObject(hdc, g_fGear);
-    WCHAR gearChar = 0x2699;
+    TEXTMETRIC tmGear;
+    GetTextMetrics(hdc, &tmGear);
+    WCHAR gearStr[] = { 0x2699, 0 };  /* null-terminated for TextOutOutlined */
     SIZE gearSz;
-    GetTextExtentPoint32W(hdc, &gearChar, 1, &gearSz);
+    GetTextExtentPoint32W(hdc, gearStr, 1, &gearSz);
+    /* gearY = baseline position. visual center = gearY - ascent/2. Match to hdrCenter. */
+    int gearY = hdrCenter + tmGear.tmAscent / 2;
     int gearX = cr.right - g_l.pad_x - gearSz.cx;
-    int gearY = S(4);
-    SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, COL_GEAR);
-    TextOutW(hdc, gearX, gearY, &gearChar, 1);
-    TextOutW(hdc, gearX - 1, gearY, &gearChar, 1);
-    TextOutW(hdc, gearX + 1, gearY, &gearChar, 1);
-    TextOutW(hdc, gearX, gearY - 1, &gearChar, 1);
-    TextOutW(hdc, gearX, gearY + 1, &gearChar, 1);
-    SetTextColor(hdc, COL_GEAR);
-    TextOutW(hdc, gearX, gearY, &gearChar, 1);
+    TextOutOutlined(hdc, gearX, gearY, gearStr, COL_GEAR, RGB(0,0,0));
     SelectObject(hdc, old);
 }
 

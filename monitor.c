@@ -429,7 +429,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
 
     case WM_RBUTTONUP:
-        if (!g_locked) {
+        {
             POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
             ClientToScreen(hWnd, &pt);
             ShowMenu(hWnd, pt.x, pt.y);
@@ -473,6 +473,12 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE hPrev, LPWSTR cmd, int show)
 {
+    HANDLE hMutex = CreateMutexW(NULL, TRUE, L"MonitorCPU_RAM_GPU_SingleInstance");
+    if (!hMutex || GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (hMutex) CloseHandle(hMutex);
+        return 0;
+    }
+
     g_hInst = inst;
     g_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
     g_iconCustom = 0;
@@ -520,5 +526,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE hPrev, LPWSTR cmd, int show)
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+    CloseHandle(hMutex);
     return 0;
 }

@@ -39,7 +39,7 @@ static const BYTE  OPACITY_VAL[]  = { 255, 217, 179, 128 };
 
 #define TIMER_ID      1
 #define REFRESH_MS    1000
-#define APP_VERSION   L"v1.5"
+#define APP_VERSION   L"v1.5.0"
 #define WM_TASKBAR    (WM_APP + 1)
 #define WM_TRAY       (WM_APP + 2)
 #define ID_LOCK       100

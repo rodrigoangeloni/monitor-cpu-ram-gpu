@@ -799,20 +799,15 @@ static void DrawNeonGlowBar(HDC hdc, int x, int y, int w, int h, float pct, COLO
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
 
-    int r = h / 2;
-    if (r > 16) r = 16;
-    if (r < 3) r = 3;
-
     HBRUSH oldBr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
     HPEN oldPen = (HPEN)SelectObject(hdc, GetStockObject(NULL_PEN));
 
     HBRUSH tb = CreateSolidBrush(COL_TRACK);
     SelectObject(hdc, tb);
-    RoundRect(hdc, x, y, x + w, y + h, r, r);
+    Rectangle(hdc, x, y, x + w, y + h);
     DeleteObject(tb);
 
     int fw = (int)((double)w * pct / 100.0);
-    if (pct > 0.5f && fw < r * 2) fw = r * 2;
     if (fw > w) fw = w;
 
     if (fw > 2) {
@@ -822,7 +817,7 @@ static void DrawNeonGlowBar(HDC hdc, int x, int y, int w, int h, float pct, COLO
 
         HBRUSH fb = CreateSolidBrush(c);
         SelectObject(hdc, fb);
-        RoundRect(hdc, x, y, x + fw, y + h, r, r);
+        Rectangle(hdc, x, y, x + fw, y + h);
         DeleteObject(fb);
 
         HBRUSH hb = CreateSolidBrush(RGB(
@@ -830,14 +825,14 @@ static void DrawNeonGlowBar(HDC hdc, int x, int y, int w, int h, float pct, COLO
             (GetGValue(c) + 100) > 255 ? 255 : (GetGValue(c) + 100),
             (GetBValue(c) + 100) > 255 ? 255 : (GetBValue(c) + 100)));
         SelectObject(hdc, hb);
-        RoundRect(hdc, x, y, x + fw, y + 2, r, r);
+        Rectangle(hdc, x, y, x + fw, y + 2);
         DeleteObject(hb);
     }
 
     HPEN pen = CreatePen(PS_INSIDEFRAME, 2, c);
     SelectObject(hdc, pen);
     SelectObject(hdc, GetStockObject(NULL_BRUSH));
-    RoundRect(hdc, x, y, x + w, y + h, r, r);
+    Rectangle(hdc, x, y, x + w, y + h);
     DeleteObject(pen);
 
     SelectObject(hdc, oldBr);

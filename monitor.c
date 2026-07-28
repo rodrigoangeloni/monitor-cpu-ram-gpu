@@ -563,11 +563,11 @@ static int ComputeLayout(void)
     h += g_l.sec_h;
     h += g_l.sec_h;
     if (g_gpuOK && g_gpu >= 0) {
-        h += g_l.bar_h + S(8) + S(8);
+        h += g_l.bar_h + S(4) + S(2);
         if (g_vramOK && g_vramPct >= 0 && g_vramTotal > 0) {
-            h += g_l.bar_h + S(8);
+            h += g_l.bar_h + S(2);
         } else {
-            h += S(12);
+            h += S(4);
         }
     }
     if (g_netOK) {
@@ -586,22 +586,22 @@ static void ApplyOpacity(void)
 
 static void RecalcLayout(void)
 {
-    g_l.width      = (int)(880.0f * g_scale);
-    g_l.header_h   = (int)(54.0f  * g_scale);
-    g_l.footer_h   = (int)(26.0f  * g_scale);
-    g_l.sec_h      = (int)(98.0f  * g_scale);
-    g_l.sec_h_net  = (int)(78.0f  * g_scale);
-    g_l.pad_x      = (int)(20.0f  * g_scale);
-    g_l.pad_y      = (int)(14.0f  * g_scale);
-    g_l.bar_h      = (int)(30.0f  * g_scale);
-    if (g_l.bar_h < 16) g_l.bar_h = 16;
-    g_l.sz_hdr     = (int)(-19.0f * g_scale);
-    g_l.sz_ttl     = (int)(-26.0f * g_scale);
-    g_l.sz_sub     = (int)(-13.0f * g_scale);
-    g_l.sz_bar     = (int)(-19.0f * g_scale);
-    g_l.sz_gear    = (int)(-22.0f * g_scale);
-    g_l.sz_net     = (int)(-17.0f * g_scale);
-    g_l.sz_ftr     = (int)(-11.0f * g_scale);
+    g_l.width      = (int)(280.0f * g_scale);
+    g_l.header_h   = (int)(22.0f  * g_scale);
+    g_l.footer_h   = (int)(14.0f  * g_scale);
+    g_l.sec_h      = (int)(40.0f  * g_scale);
+    g_l.sec_h_net  = (int)(32.0f  * g_scale);
+    g_l.pad_x      = (int)(8.0f   * g_scale);
+    g_l.pad_y      = (int)(6.0f   * g_scale);
+    g_l.bar_h      = (int)(14.0f  * g_scale);
+    if (g_l.bar_h < 8) g_l.bar_h = 8;
+    g_l.sz_hdr     = (int)(-12.0f * g_scale);
+    g_l.sz_ttl     = (int)(-14.0f * g_scale);
+    g_l.sz_sub     = (int)(-10.0f * g_scale);
+    g_l.sz_bar     = (int)(-11.0f * g_scale);
+    g_l.sz_gear    = (int)(-14.0f * g_scale);
+    g_l.sz_net     = (int)(-11.0f * g_scale);
+    g_l.sz_ftr     = (int)(-9.0f  * g_scale);
 
     if (g_l.sz_hdr > -8)  g_l.sz_hdr  = -8;
     if (g_l.sz_ttl > -9)  g_l.sz_ttl  = -9;
@@ -759,7 +759,7 @@ static void DrawTextOutlined(HDC hdc, LPCWSTR s, int c, RECT *r, UINT fmt, COLOR
 static void DrawHeader(HDC hdc, RECT cr)
 {
     HGDIOBJ old = SelectObject(hdc, g_fHdr);
-    TextOutOutlined(hdc, g_l.pad_x, S(14), L"SISTEMA - MONITOR DE RECURSOS PRO", COL_TEXT_HI, RGB(0,0,0));
+    TextOutOutlined(hdc, g_l.pad_x, S(4), L"MONITOR", COL_TEXT_HI, RGB(0,0,0));
     SelectObject(hdc, old);
 
     int gearSize = S(24);
@@ -788,7 +788,7 @@ static void DrawNeonGlowBar(HDC hdc, int x, int y, int w, int h, float pct, COLO
 
     int r = h / 2;
     if (r > 16) r = 16;
-    if (r < 6) r = 6;
+    if (r < 3) r = 3;
 
     HBRUSH oldBr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
     HPEN oldPen = (HPEN)SelectObject(hdc, GetStockObject(NULL_PEN));
@@ -846,10 +846,10 @@ static void DrawSection(HDC hdc, int x, int y, int w, const WCHAR *label,
     old = SelectObject(hdc, g_fSub);
     SetTextColor(hdc, COL_TEXT_DIM);
     SetBkMode(hdc, TRANSPARENT);
-    TextOutW(hdc, x, y + S(30), subtitle, (int)lstrlenW(subtitle));
+    TextOutW(hdc, x, y + S(16), subtitle, (int)lstrlenW(subtitle));
     SelectObject(hdc, old);
 
-    int barY = y + S(52);
+    int barY = y + S(24);
     int barH = g_l.bar_h;
     DrawNeonGlowBar(hdc, x, barY, w, barH, pct, c);
 
@@ -857,20 +857,20 @@ static void DrawSection(HDC hdc, int x, int y, int w, const WCHAR *label,
         WCHAR barText[16];
         StringCchPrintfW(barText, 16, L"%3.0f%%", pct);
         old = SelectObject(hdc, g_fBar);
-        TextOutOutlined(hdc, x + S(10), barY + S(3), barText, RGB(255,255,255), RGB(0,0,0));
+        TextOutOutlined(hdc, x + S(6), barY + S(1), barText, RGB(255,255,255), RGB(0,0,0));
         SelectObject(hdc, old);
     }
 }
 
 static void DrawGPUSection(HDC hdc, int x, int y, int w, float pct)
 {
-    int barH = g_l.bar_h + S(8);
+    int barH = g_l.bar_h + S(4);
     DrawNeonGlowBar(hdc, x, y, w, barH, pct, COL_GPU);
 
     HGDIOBJ old = SelectObject(hdc, g_fTtl);
     WCHAR buf[64];
-    StringCchPrintfW(buf, 64, L"GPU - %3.0f%% Carga", pct);
-    RECT tr = { x + 14, y, x + w, y + barH };
+    StringCchPrintfW(buf, 64, L"GPU %3.0f%%", pct);
+    RECT tr = { x + S(6), y, x + w, y + barH };
     DrawTextOutlined(hdc, buf, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE, RGB(255,255,255), RGB(0,0,0));
     SelectObject(hdc, old);
 }
@@ -883,9 +883,9 @@ static void DrawVramSection(HDC hdc, int x, int y, int w, float pct, DWORD usedM
     DrawNeonGlowBar(hdc, x, y, w, barH, pct, COL_VRAM);
 
     /* pill inside the bar on the left */
-    int pillW = S(70); if (pillW < 40) pillW = 40;
-    int pillX = x + S(4);
-    int pillGap = S(3);
+    int pillW = S(40); if (pillW < 24) pillW = 24;
+    int pillX = x + S(2);
+    int pillGap = S(1);
     RECT pr = { pillX, y + pillGap, pillX + pillW, y + barH - pillGap };
     HBRUSH pb = CreateSolidBrush(COL_VRAM);
     FillRect(hdc, &pr, pb);
@@ -902,8 +902,8 @@ static void DrawVramSection(HDC hdc, int x, int y, int w, float pct, DWORD usedM
     WCHAR tbuf[96];
     double usedGB = (double)usedMB / 1024.0;
     double totalGB = (double)totalMB / 1024.0;
-    StringCchPrintfW(tbuf, 96, L"VRAM Usada - %3.0f%% (%.1fGB / %.0fGB)", pct, usedGB, totalGB);
-    TextOutOutlined(hdc, pillX + pillW + S(10), y + pillGap + S(1), tbuf, COL_TEXT_HI, RGB(0,0,0));
+    StringCchPrintfW(tbuf, 96, L"VRAM %3.0f%% (%.1f / %.0fGB)", pct, usedGB, totalGB);
+    TextOutOutlined(hdc, pillX + pillW + S(4), y + pillGap + S(1), tbuf, COL_TEXT_HI, RGB(0,0,0));
     SelectObject(hdc, old);
 }
 
@@ -982,7 +982,7 @@ static void DrawArrow(HDC hdc, int cx, int cy, int size, int up, COLORREF c)
 
 static void DrawNetSection(HDC hdc, int x, int y, int w, DWORD downBps, DWORD upBps)
 {
-    int barH = g_l.bar_h + S(16);
+    int barH = g_l.bar_h + S(4);
     DrawNeonGlowBar(hdc, x, y, w, barH, 100, COL_NET);
 
     HGDIOBJ old = SelectObject(hdc, g_fNet);
@@ -992,24 +992,10 @@ static void DrawNetSection(HDC hdc, int x, int y, int w, DWORD downBps, DWORD up
     double downMbps = (double)downBps / 1000000.0;
     double upMbps = (double)upBps / 1000000.0;
 
-    int cy = y + barH / 2;
-    int arrSize = S(28);
-    if (arrSize < 16) arrSize = 16;
-
-    int leftUpX = x + S(70);
-    int leftDnX = x + S(120);
-    int rightDnX = x + w - S(120);
-    int rightUpX = x + w - S(70);
-
-    DrawArrow(hdc, leftUpX,  cy, arrSize, 1, RGB(255, 70, 70));
-    DrawArrow(hdc, leftDnX,  cy, arrSize, 0, RGB(60, 220, 110));
-    DrawArrow(hdc, rightDnX, cy, arrSize, 0, RGB(60, 220, 110));
-    DrawArrow(hdc, rightUpX, cy, arrSize, 1, RGB(255, 70, 70));
-
-    RECT tr = { leftDnX + S(25), y, rightDnX - S(25), y + barH };
     WCHAR tbuf[128];
-    StringCchPrintfW(tbuf, 128, L"Bajada: %.0f Mbps  |  Subida: %.0f Mbps",
-                     downMbps, upMbps);
+    StringCchPrintfW(tbuf, 128, L"\x2193 %.0f | \x2191 %.0f Mbps", downMbps, upMbps);
+
+    RECT tr = { x, y, x + w, y + barH };
     DrawTextOutlined(hdc, tbuf, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE, RGB(255,255,255), RGB(0,0,0));
     SelectObject(hdc, old);
 }
@@ -1221,8 +1207,11 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             int my = GET_Y_LPARAM(lParam);
             RECT cr;
             GetClientRect(hWnd, &cr);
-            int inGear = (mx >= cr.right - 36 && mx <= cr.right - 4 &&
-                          my >= 4 && my <= 36);
+            int gearSize = S(24); if (gearSize < 18) gearSize = 18;
+            int gearX = cr.right - g_l.pad_x - gearSize;
+            int gearY = g_l.pad_y;
+            int inGear = (mx >= gearX && mx <= gearX + gearSize &&
+                          my >= gearY && my <= gearY + gearSize);
             if (inGear) {
                 g_gearDown = 1;
                 SetCapture(hWnd);
@@ -1241,8 +1230,11 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             int my = GET_Y_LPARAM(lParam);
             RECT cr;
             GetClientRect(hWnd, &cr);
-            if (mx < cr.right - 36 || mx > cr.right - 4 ||
-                my < 4 || my > 36) {
+            int gearSize = S(24); if (gearSize < 18) gearSize = 18;
+            int gearX = cr.right - g_l.pad_x - gearSize;
+            int gearY = g_l.pad_y;
+            if (mx < gearX || mx > gearX + gearSize ||
+                my < gearY || my > gearY + gearSize) {
                 g_gearDown = 0;
                 ReleaseCapture();
             }
@@ -1257,8 +1249,11 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             int my = GET_Y_LPARAM(lParam);
             RECT cr;
             GetClientRect(hWnd, &cr);
-            if (mx >= cr.right - 36 && mx <= cr.right - 4 &&
-                my >= 4 && my <= 36) {
+            int gearSize = S(24); if (gearSize < 18) gearSize = 18;
+            int gearX = cr.right - g_l.pad_x - gearSize;
+            int gearY = g_l.pad_y;
+            if (mx >= gearX && mx <= gearX + gearSize &&
+                my >= gearY && my <= gearY + gearSize) {
                 POINT pt;
                 GetCursorPos(&pt);
                 ShowSettingsMenu(hWnd, pt.x, pt.y);

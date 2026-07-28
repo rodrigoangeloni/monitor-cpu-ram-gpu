@@ -560,18 +560,15 @@ static void FontsUninit(void)
 static int ComputeLayout(void)
 {
     int h = g_l.header_h + g_l.pad_y;
-    h += g_l.sec_h;
-    h += g_l.sec_h;
+    h += g_l.sec_h;                 /* CPU */
+    h += g_l.sec_h;                 /* RAM */
     if (g_gpuOK && g_gpu >= 0) {
-        h += g_l.bar_h + S(4) + S(2);
-        if (g_vramOK && g_vramPct >= 0 && g_vramTotal > 0) {
-            h += g_l.bar_h + S(2);
-        } else {
-            h += S(4);
-        }
+        h += g_l.sec_h;             /* GPU bar */
+        if (g_vramOK && g_vramPct >= 0 && g_vramTotal > 0)
+            h += g_l.sec_h;         /* VRAM bar */
     }
     if (g_netOK) {
-        h += g_l.sec_h_net;
+        h += g_l.sec_h_net;         /* Net bar */
     }
     h += g_l.pad_y + g_l.footer_h;
     return h;
@@ -593,14 +590,16 @@ static void RecalcLayout(void)
     g_l.sec_h_net  = (int)(32.0f  * g_scale);
     g_l.pad_x      = (int)(8.0f   * g_scale);
     g_l.pad_y      = (int)(6.0f   * g_scale);
-    g_l.bar_h      = (int)(14.0f  * g_scale);
-    if (g_l.bar_h < 8) g_l.bar_h = 8;
+    g_l.bar_h      = (int)(16.0f  * g_scale);
+    if (g_l.bar_h < 9) g_l.bar_h = 9;
+    g_l.sec_h      = g_l.bar_h + S(4);
+    g_l.sec_h_net  = g_l.bar_h + S(4);
     g_l.sz_hdr     = (int)(-12.0f * g_scale);
     g_l.sz_ttl     = (int)(-14.0f * g_scale);
     g_l.sz_sub     = (int)(-10.0f * g_scale);
-    g_l.sz_bar     = (int)(-11.0f * g_scale);
+    g_l.sz_bar     = (int)(-12.0f * g_scale);
     g_l.sz_gear    = (int)(-14.0f * g_scale);
-    g_l.sz_net     = (int)(-11.0f * g_scale);
+    g_l.sz_net     = (int)(-12.0f * g_scale);
     g_l.sz_ftr     = (int)(-9.0f  * g_scale);
 
     if (g_l.sz_hdr > -8)  g_l.sz_hdr  = -8;
@@ -832,39 +831,22 @@ static void DrawNeonGlowBar(HDC hdc, int x, int y, int w, int h, float pct, COLO
 }
 
 static void DrawSection(HDC hdc, int x, int y, int w, const WCHAR *label,
-                        float pct, const WCHAR *subtitle, COLORREF c, const WCHAR *displayPct)
+                        float pct, COLORREF c, const WCHAR *displayPct)
 {
-    HGDIOBJ old;
-    WCHAR title[64];
-
-    StringCchPrintfW(title, 64, L"%s - %s", label, displayPct);
-
-    old = SelectObject(hdc, g_fTtl);
-    TextOutOutlined(hdc, x, y, title, COL_TEXT_HI, RGB(0,0,0));
-    SelectObject(hdc, old);
-
-    old = SelectObject(hdc, g_fSub);
-    SetTextColor(hdc, COL_TEXT_DIM);
-    SetBkMode(hdc, TRANSPARENT);
-    TextOutW(hdc, x, y + S(16), subtitle, (int)lstrlenW(subtitle));
-    SelectObject(hdc, old);
-
-    int barY = y + S(24);
     int barH = g_l.bar_h;
-    DrawNeonGlowBar(hdc, x, barY, w, barH, pct, c);
+    DrawNeonGlowBar(hdc, x, y, w, barH, pct, c);
 
-    if (pct >= 1.0f) {
-        WCHAR barText[16];
-        StringCchPrintfW(barText, 16, L"%3.0f%%", pct);
-        old = SelectObject(hdc, g_fBar);
-        TextOutOutlined(hdc, x + S(6), barY + S(1), barText, RGB(255,255,255), RGB(0,0,0));
-        SelectObject(hdc, old);
-    }
+    HGDIOBJ old = SelectObject(hdc, g_fTtl);
+    WCHAR buf[64];
+    StringCchPrintfW(buf, 64, L"%s %s", label, displayPct);
+    RECT tr = { x + S(6), y, x + w, y + barH };
+    DrawTextOutlined(hdc, buf, -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE, RGB(255,255,255), RGB(0,0,0));
+    SelectObject(hdc, old);
 }
 
 static void DrawGPUSection(HDC hdc, int x, int y, int w, float pct)
 {
-    int barH = g_l.bar_h + S(4);
+    int barH = g_l.bar_h;
     DrawNeonGlowBar(hdc, x, y, w, barH, pct, COL_GPU);
 
     HGDIOBJ old = SelectObject(hdc, g_fTtl);
@@ -878,8 +860,6 @@ static void DrawGPUSection(HDC hdc, int x, int y, int w, float pct)
 static void DrawVramSection(HDC hdc, int x, int y, int w, float pct, DWORD usedMB, DWORD totalMB)
 {
     int barH = g_l.bar_h;
-
-    /* use the same neon glow bar as other sections */
     DrawNeonGlowBar(hdc, x, y, w, barH, pct, COL_VRAM);
 
     /* pill inside the bar on the left */
@@ -982,7 +962,7 @@ static void DrawArrow(HDC hdc, int cx, int cy, int size, int up, COLORREF c)
 
 static void DrawNetSection(HDC hdc, int x, int y, int w, DWORD downBps, DWORD upBps)
 {
-    int barH = g_l.bar_h + S(4);
+    int barH = g_l.bar_h;
     DrawNeonGlowBar(hdc, x, y, w, barH, 100, COL_NET);
 
     HGDIOBJ old = SelectObject(hdc, g_fNet);
@@ -1019,25 +999,19 @@ static void Render(HWND hWnd)
     WCHAR pctTxt[16];
 
     StringCchPrintfW(pctTxt, 16, L"%3.0f%%", g_cpu);
-    DrawSection(hdc, x, y, w, L"CPU", g_cpu, L"Uso total de núcleos", COL_CPU, pctTxt);
+    DrawSection(hdc, x, y, w, L"CPU", g_cpu, COL_CPU, pctTxt);
     y += g_l.sec_h;
 
-    double usedGB = (double)g_ramUsed / 1024.0;
-    double totalGB = (double)g_ramTotal / 1024.0;
-    WCHAR ramSub[64];
-    StringCchPrintfW(ramSub, 64, L"Uso de memoria (%.1fGB / %.0fGB)", usedGB, totalGB);
     StringCchPrintfW(pctTxt, 16, L"%3.0f%%", g_ramPct);
-    DrawSection(hdc, x, y, w, L"RAM", g_ramPct, ramSub, COL_RAM, pctTxt);
+    DrawSection(hdc, x, y, w, L"RAM", g_ramPct, COL_RAM, pctTxt);
     y += g_l.sec_h;
 
     if (g_gpuOK && g_gpu >= 0) {
         DrawGPUSection(hdc, x, y, w, g_gpu);
-        y += g_l.bar_h + S(8) + S(8);
+        y += g_l.sec_h;
         if (g_vramOK && g_vramPct >= 0 && g_vramTotal > 0) {
             DrawVramSection(hdc, x, y, w, g_vramPct, g_vramUsed, g_vramTotal);
-            y += g_l.bar_h + S(8);
-        } else {
-            y += S(12);
+            y += g_l.sec_h;
         }
     }
 

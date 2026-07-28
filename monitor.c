@@ -825,7 +825,7 @@ static void DrawNeonGlowBar(HDC hdc, int x, int y, int w, int h, float pct, COLO
         DeleteObject(hb);
     }
 
-    HPEN pen = CreatePen(PS_INSIDEFRAME, 2, c);
+    HPEN pen = CreatePen(PS_INSIDEFRAME, 1, c);
     SelectObject(hdc, pen);
     SelectObject(hdc, GetStockObject(NULL_BRUSH));
     Rectangle(hdc, x, y, x + w, y + h);

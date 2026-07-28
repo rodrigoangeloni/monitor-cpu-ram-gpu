@@ -365,7 +365,7 @@ static void ShowMenu(HWND hWnd, int x, int y)
 {
     HMENU m = CreatePopupMenu();
     AppendMenuW(m, MF_STRING | (g_locked ? MF_CHECKED : 0), ID_LOCK,
-                g_locked ? L"Desbloquear (click-through)" : L"Fijar (click-through)");
+                g_locked ? L"Desfijar posición" : L"Fijar posición");
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     AppendMenuW(m, MF_STRING, ID_EXIT, L"Salir");
     SetForegroundWindow(hWnd);
@@ -376,9 +376,6 @@ static void ShowMenu(HWND hWnd, int x, int y)
 static void ToggleLock(void)
 {
     g_locked = !g_locked;
-    LONG ex = GetWindowLongW(g_hWnd, GWL_EXSTYLE);
-    SetWindowLongW(g_hWnd, GWL_EXSTYLE,
-                   g_locked ? (ex | WS_EX_TRANSPARENT) : (ex & ~WS_EX_TRANSPARENT));
 }
 
 static void TrayAdd(HWND hWnd, HICON hIcon)
@@ -400,6 +397,9 @@ static void TrayRemove(void)
 {
     Shell_NotifyIconW(NIM_DELETE, &g_nid);
 }
+
+static void SavePosition(void);
+static void LoadPosition(int *px, int *py);
 
 static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -467,8 +467,49 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         TrayRemove();
         TrayAdd(hWnd, g_nid.hIcon);
         return 0;
+
+    case WM_WINDOWPOSCHANGED:
+        SavePosition();
+        return 0;
     }
     return DefWindowProcW(hWnd, msg, wParam, lParam);
+}
+
+static void SavePosition(void)
+{
+    HKEY hKey;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\RoanDev\\MonitorOverlay",
+                        0, NULL, 0, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RECT rc;
+        GetWindowRect(g_hWnd, &rc);
+        DWORD v;
+        v = (DWORD)rc.left;
+        RegSetValueExW(hKey, L"PosX", 0, REG_DWORD, (BYTE*)&v, sizeof(v));
+        v = (DWORD)rc.top;
+        RegSetValueExW(hKey, L"PosY", 0, REG_DWORD, (BYTE*)&v, sizeof(v));
+        RegCloseKey(hKey);
+    }
+}
+
+static void LoadPosition(int *px, int *py)
+{
+    int sw = GetSystemMetrics(SM_CXSCREEN);
+    int sh = GetSystemMetrics(SM_CYSCREEN);
+    *px = sw - WIDTH  - 20;
+    *py = sh - HEIGHT - 50;
+    HKEY hKey;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RoanDev\\MonitorOverlay",
+                      0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS) {
+        DWORD v, sz = sizeof(DWORD);
+        if (RegQueryValueExW(hKey, L"PosX", NULL, NULL, (BYTE*)&v, &sz) == ERROR_SUCCESS) {
+            if ((int)v >= 0 && (int)v <= sw - WIDTH) *px = (int)v;
+        }
+        sz = sizeof(DWORD);
+        if (RegQueryValueExW(hKey, L"PosY", NULL, NULL, (BYTE*)&v, &sz) == ERROR_SUCCESS) {
+            if ((int)v >= 0 && (int)v <= sh - HEIGHT) *py = (int)v;
+        }
+        RegCloseKey(hKey);
+    }
 }
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE hPrev, LPWSTR cmd, int show)
@@ -503,10 +544,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE hPrev, LPWSTR cmd, int show)
     wc.lpszClassName = L"MonitorOverlay";
     if (!RegisterClassW(&wc)) { CPUUninit(); GPUUninit(); return 1; }
 
-    int sw = GetSystemMetrics(SM_CXSCREEN);
-    int sh = GetSystemMetrics(SM_CYSCREEN);
-    int px = sw - WIDTH  - 20;
-    int py = sh - HEIGHT - 50;
+    int px, py;
+    LoadPosition(&px, &py);
 
     g_hWnd = CreateWindowExW(
         WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,

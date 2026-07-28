@@ -811,10 +811,6 @@ static void DrawNeonGlowBar(HDC hdc, int x, int y, int w, int h, float pct, COLO
     if (fw > w) fw = w;
 
     if (fw > 2) {
-        GlowSetColor(c);
-        GlowDraw(hdc, x - 4, y,     fw + 8, h + 2, 28);
-        GlowDraw(hdc, x,     y + 1, fw,     h - 1, 55);
-
         HBRUSH fb = CreateSolidBrush(c);
         SelectObject(hdc, fb);
         Rectangle(hdc, x, y, x + fw, y + h);

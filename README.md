@@ -2,7 +2,7 @@
 
 Overlay transparente para Windows que muestra uso de **CPU**, **RAM**, **GPU**, **VRAM** y **red** en tiempo real. Sin bloat, sin dependencias externas, solo lo esencial.
 
-![Monitor by RoanDev](Monitor_by_RoanDev.jpg)
+![Monitor by RoanDev v1.5.0](img/Monitor_by_RoanDev_v1.5.0.jpg)
 
 ---
 
@@ -90,7 +90,7 @@ monitor.exe
 
 ## 📸 Screenshot
 
-![Screenshot](Monitor_by_RoanDev.jpg)
+![Screenshot v1.0.0](img/Monitor_by_RoanDev_v1.0.0.jpg)
 
 ---
 

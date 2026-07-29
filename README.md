@@ -90,7 +90,9 @@ monitor.exe
 
 ## 📸 Screenshot
 
-![Screenshot v1.0.0](img/Monitor_by_RoanDev_v1.0.0.jpg)
+| v1.0.0 | v1.5.0 |
+|--------|--------|
+| ![v1.0.0](img/Monitor_by_RoanDev_v1.0.0.jpg) | ![v1.5.0](img/Monitor_by_RoanDev_v1.5.0.jpg) |
 
 ---
 

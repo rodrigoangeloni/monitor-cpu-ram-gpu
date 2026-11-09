@@ -767,6 +767,17 @@ static void DrawHeader(HDC hdc, RECT cr)
 
     old = SelectObject(hdc, g_fHdr);
     TextOutOutlined(hdc, g_l.pad_x, S(4), L"MONITOR", COL_TEXT_HI, RGB(0,0,0));
+    SIZE monSz;
+    GetTextExtentPoint32W(hdc, L"MONITOR", 7, &monSz);
+    SelectObject(hdc, old);
+
+    /* Subtítulo "CPU RAM GPU VRAM" a la derecha de MONITOR, alineado a la línea base */
+    old = SelectObject(hdc, g_fSub);
+    TEXTMETRIC tmSub;
+    GetTextMetrics(hdc, &tmSub);
+    TextOutOutlined(hdc, g_l.pad_x + monSz.cx + S(6),
+                    S(4) + hdrAscent - tmSub.tmAscent,
+                    L"CPU RAM GPU VRAM", COL_TEXT_DIM, RGB(0,0,0));
     SelectObject(hdc, old);
 
     /* Gear icon aligned so its visual center matches MONITOR's visual center */

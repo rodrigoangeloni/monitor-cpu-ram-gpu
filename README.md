@@ -2,7 +2,7 @@
 
 Overlay transparente para Windows que muestra uso de **CPU**, **RAM**, **GPU**, **VRAM** y **red** en tiempo real. Sin bloat, sin dependencias externas, solo lo esencial.
 
-![Monitor by RoanDev v1.5.0](img/Monitor_by_RoanDev_v1.5.0.jpg)
+![Monitor by RoanDev v1.6.1](img/Monitor_by_RoanDev_v1.6.1.jpg)
 
 ---
 
@@ -95,8 +95,8 @@ monitor.exe
 
 | v1.0.0 | v1.5.0 |
 |--------|--------|
-| ![v1.0.0](img/Monitor_by_RoanDev_v1.0.0.jpg) | ![v1.5.0](img/Monitor_by_RoanDev_v1.5.0.jpg) |
-| [Descargar v1.0.3](https://github.com/rodrigoangeloni/monitor-cpu-ram-gpu/releases/tag/v1.0.3) | [Descargar v1.5.0](https://github.com/rodrigoangeloni/monitor-cpu-ram-gpu/releases/tag/v1.5.0) |
+| ![v1.0.0](img/Monitor_by_RoanDev_v1.0.0.jpg) | ![v1.5.0](img/Monitor_by_RoanDev_v1.5.0.jpg) | ![v1.6.1](img/Monitor_by_RoanDev_v1.6.1.jpg) |
+| [Descargar v1.0.3](https://github.com/rodrigoangeloni/monitor-cpu-ram-gpu/releases/tag/v1.0.3) | [Descargar v1.5.0](https://github.com/rodrigoangeloni/monitor-cpu-ram-gpu/releases/tag/v1.5.0) | [Descargar v1.6.1](https://github.com/rodrigoangeloni/monitor-cpu-ram-gpu/releases/tag/v1.6.1) |
 
 ---
 

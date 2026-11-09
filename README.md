@@ -9,10 +9,11 @@ Overlay transparente para Windows que muestra uso de **CPU**, **RAM**, **GPU**, 
 ## 🎯 Características
 
 - **1 solo archivo** — lógica completa en `monitor.c`
-- **<170 KB el EXE** — compilado con optimización de tamaño (MSVC ~169 KB / MinGW ~71 KB)
+- **<170 KB el EXE** — compilado con optimización de tamaño (MSVC ~174 KB / MinGW ~75 KB)
 - **Solo APIs nativas** — Win32 GDI + PDH + DXGI, cero librerías de terceros
 - **Interfaz minimalista y compacta** — barras con texto y porcentaje dentro de cada barra
 - **Overlay transparente** — siempre visible, nunca molesta
+- **Auto-actualización** — al iniciar consulta el último release de GitHub y, si hay una versión nueva, se descarga, se reemplaza y se reinicia (desactivable con `AutoUpdate=0` en `HKCU\Software\RoanDev\MonitorOverlay`)
 - **Recuerda posición, opacidad y escala** — se guarda automáticamente en el registro
 - **Encabezado informativo** — título `MONITOR` con el subtítulo `CPU RAM GPU VRAM`
 - **Icono en la bandeja** — clic derecho para fijar/desfijar posición, configuración o salir
@@ -24,12 +25,12 @@ Lo que realmente importa: **cuánto están usando tu CPU, RAM, GPU y red ahora m
 
 ## ⚙️ Compilar
 
-### MinGW-w64 (~71 KB)
+### MinGW-w64 (~75 KB)
 ```bat
 build_mingw.bat
 ```
 
-### MSVC (requiere Visual Studio Build Tools, ~169 KB)
+### MSVC (requiere Visual Studio Build Tools, ~174 KB)
 ```bat
 build_msvc.bat
 ```
@@ -62,7 +63,7 @@ monitor.exe
 ## 📋 Dependencias
 
 - Windows 7+ (`_WIN32_WINNT 0x0601`)
-- Solo APIs del sistema: `user32.lib gdi32.lib shell32.lib advapi32.lib pdh.lib`
+- Solo APIs del sistema: `user32.lib gdi32.lib shell32.lib advapi32.lib pdh.lib winhttp.lib`
 
 ---
 

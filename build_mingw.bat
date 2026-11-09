@@ -38,7 +38,7 @@ if errorlevel 1 (
 echo [2/3] Compilando monitor.c (%MINGW%)...
 
 "%MINGW%" -Os -s -mwindows -municode -m64 -fno-ident -o "%~dp0monitor.exe" "%~dp0monitor.c" !ICON_RES! ^
-    -lgdi32 -lshell32 -ladvapi32 -lpdh -liphlpapi -lmsimg32 -ldxgi -ld3d11 -Wl,--gc-sections
+    -lgdi32 -lshell32 -ladvapi32 -lpdh -liphlpapi -lmsimg32 -ldxgi -ld3d11 -lwinhttp -Wl,--gc-sections
 
 if errorlevel 1 (
     echo [ERROR] Compilacion fallida

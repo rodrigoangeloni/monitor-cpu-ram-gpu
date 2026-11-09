@@ -9,6 +9,7 @@
 #include <dxgi.h>
 #include <strsafe.h>
 #include <stdint.h>
+#include <winhttp.h>
 
 typedef struct {
     int width;
@@ -39,7 +40,7 @@ static const BYTE  OPACITY_VAL[]  = { 255, 217, 179, 128 };
 
 #define TIMER_ID      1
 #define REFRESH_MS    1000
-#define APP_VERSION   L"v1.6.1"
+#define APP_VERSION   L"v1.7.0"
 #define WM_TASKBAR    (WM_APP + 1)
 #define WM_TRAY       (WM_APP + 2)
 #define ID_LOCK       100
@@ -1353,12 +1354,209 @@ static void LoadPosition(int *px, int *py)
     }
 }
 
+/* ---------------------------------------------------------------------
+ * Auto-actualización: consulta el último release de GitHub (HTTPS) al
+ * iniciar y, si hay una versión mayor, descarga el .exe correspondiente a
+ * este compilador, reemplaza el ejecutable actual y se reinicia.
+ * Se puede desactivar con HKCU\Software\RoanDev\MonitorOverlay\AutoUpdate=0
+ * ------------------------------------------------------------------- */
+#define UPDATE_REPO  L"rodrigoangeloni/monitor-cpu-ram-gpu"
+#ifdef _MSC_VER
+#define UPDATE_ASSET L"monitor-msvc.exe"
+#else
+#define UPDATE_ASSET L"monitor-mingw.exe"
+#endif
+
+static BYTE *HttpGet(const WCHAR *host, const WCHAR *path, DWORD maxBytes, DWORD *outLen)
+{
+    BYTE *buf = NULL;
+    DWORD len = 0, cap = 0;
+    BOOL ok = FALSE;
+    HINTERNET hs = WinHttpOpen(L"MonitorOverlay-Updater", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                               WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hs) return NULL;
+    DWORD protos = 0xA00; /* TLS 1.1 | TLS 1.2 (necesario en Windows 7) */
+    WinHttpSetOption(hs, WINHTTP_OPTION_SECURE_PROTOCOLS, &protos, sizeof(protos));
+    WinHttpSetTimeouts(hs, 10000, 10000, 15000, 30000);
+    HINTERNET hc = WinHttpConnect(hs, host, INTERNET_DEFAULT_HTTPS_PORT, 0);
+    HINTERNET hr = hc ? WinHttpOpenRequest(hc, L"GET", path, NULL, WINHTTP_NO_REFERER,
+                                           WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE) : NULL;
+    if (hr && WinHttpSendRequest(hr, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0)
+           && WinHttpReceiveResponse(hr, NULL)) {
+        DWORD code = 0, csz = sizeof(code);
+        if (WinHttpQueryHeaders(hr, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                                WINHTTP_HEADER_NAME_BY_INDEX, &code, &csz, WINHTTP_NO_HEADER_INDEX)
+            && code == 200) {
+            ok = TRUE;
+            for (;;) {
+                DWORD avail = 0, rd = 0;
+                if (!WinHttpQueryDataAvailable(hr, &avail)) { ok = FALSE; break; }
+                if (avail == 0) break;
+                if (len + avail + 1 > maxBytes) { ok = FALSE; break; }
+                if (len + avail + 1 > cap) {
+                    DWORD ncap = (len + avail + 1) * 2;
+                    BYTE *nb = buf ? (BYTE*)HeapReAlloc(GetProcessHeap(), 0, buf, ncap)
+                                   : (BYTE*)HeapAlloc(GetProcessHeap(), 0, ncap);
+                    if (!nb) { ok = FALSE; break; }
+                    buf = nb; cap = ncap;
+                }
+                if (!WinHttpReadData(hr, buf + len, avail, &rd) || rd == 0) { ok = FALSE; break; }
+                len += rd;
+            }
+        }
+    }
+    if (hr) WinHttpCloseHandle(hr);
+    if (hc) WinHttpCloseHandle(hc);
+    WinHttpCloseHandle(hs);
+    if (!ok || !buf) {
+        if (buf) HeapFree(GetProcessHeap(), 0, buf);
+        return NULL;
+    }
+    buf[len] = 0;
+    *outLen = len;
+    return buf;
+}
+
+/* Convierte "v1.6.1" en 4 números; devuelve cuántos leyó */
+static int ParseVer(const WCHAR *s, int v[4])
+{
+    int n = 0;
+    v[0] = v[1] = v[2] = v[3] = 0;
+    if (*s == L'v' || *s == L'V') s++;
+    while (*s && n < 4) {
+        if (*s < L'0' || *s > L'9') break;
+        int x = 0;
+        while (*s >= L'0' && *s <= L'9') { x = x * 10 + (*s - L'0'); s++; }
+        v[n++] = x;
+        if (*s == L'.') s++; else break;
+    }
+    return n;
+}
+
+static BOOL AutoUpdateEnabled(void)
+{
+    DWORD val = 1, sz = sizeof(val);
+    HKEY hKey;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RoanDev\\MonitorOverlay",
+                      0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS) {
+        if (RegQueryValueExW(hKey, L"AutoUpdate", NULL, NULL, (BYTE*)&val, &sz) != ERROR_SUCCESS)
+            val = 1;
+        RegCloseKey(hKey);
+    }
+    return val != 0;
+}
+
+static DWORD WINAPI UpdateThread(LPVOID unused)
+{
+    (void)unused;
+    if (!AutoUpdateEnabled()) return 0;
+    Sleep(3000); /* dejar que la UI arranque primero */
+
+    DWORD n = 0;
+    BYTE *js = HttpGet(L"api.github.com", L"/repos/" UPDATE_REPO L"/releases/latest", 262144, &n);
+    if (!js) return 0;
+
+    /* Extraer "tag_name": "vX.Y.Z" sin librería JSON */
+    WCHAR tag[32] = {0};
+    const char *p = strstr((const char*)js, "\"tag_name\"");
+    if (p) {
+        p += 10;
+        while (*p == ' ' || *p == ':') p++;
+        if (*p == '"') {
+            p++;
+            int i = 0;
+            while (*p && *p != '"' && i < 31) {
+                char c = *p++;
+                if (!((c >= '0' && c <= '9') || c == '.' || c == 'v')) { i = 0; break; }
+                tag[i++] = (WCHAR)c;
+            }
+            tag[i] = 0;
+        }
+    }
+    HeapFree(GetProcessHeap(), 0, js);
+    if (!tag[0]) return 0;
+
+    int vn[4], vc[4];
+    if (ParseVer(tag, vn) < 2) return 0;
+    ParseVer(APP_VERSION, vc);
+    int newer = 0;
+    for (int i = 0; i < 4; i++) {
+        if (vn[i] != vc[i]) { newer = vn[i] > vc[i]; break; }
+    }
+    if (!newer) return 0;
+
+    WCHAR dl[160];
+    if (FAILED(StringCchPrintfW(dl, 160, L"/" UPDATE_REPO L"/releases/download/%s/" UPDATE_ASSET, tag)))
+        return 0;
+    BYTE *exe = HttpGet(L"github.com", dl, 2 * 1024 * 1024, &n);
+    if (!exe) return 0;
+    if (n < 20000 || exe[0] != 'M' || exe[1] != 'Z') {
+        HeapFree(GetProcessHeap(), 0, exe);
+        return 0;
+    }
+
+    WCHAR self[MAX_PATH + 8], newp[MAX_PATH + 8], oldp[MAX_PATH + 8];
+    DWORD sl = GetModuleFileNameW(NULL, self, MAX_PATH);
+    if (sl == 0 || sl >= MAX_PATH) { HeapFree(GetProcessHeap(), 0, exe); return 0; }
+    StringCchPrintfW(newp, MAX_PATH + 8, L"%s.new", self);
+    StringCchPrintfW(oldp, MAX_PATH + 8, L"%s.old", self);
+
+    HANDLE hf = CreateFileW(newp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hf == INVALID_HANDLE_VALUE) { HeapFree(GetProcessHeap(), 0, exe); return 0; }
+    DWORD wr = 0;
+    BOOL wrote = WriteFile(hf, exe, n, &wr, NULL) && wr == n;
+    CloseHandle(hf);
+    HeapFree(GetProcessHeap(), 0, exe);
+    if (!wrote) { DeleteFileW(newp); return 0; }
+
+    /* Windows permite renombrar un .exe en ejecución, no sobrescribirlo */
+    DeleteFileW(oldp);
+    if (!MoveFileExW(self, oldp, MOVEFILE_REPLACE_EXISTING)) { DeleteFileW(newp); return 0; }
+    if (!MoveFileExW(newp, self, 0)) {
+        MoveFileExW(oldp, self, MOVEFILE_REPLACE_EXISTING);
+        DeleteFileW(newp);
+        return 0;
+    }
+
+    WCHAR cmdline[MAX_PATH + 32];
+    StringCchPrintfW(cmdline, MAX_PATH + 32, L"\"%s\" --updated", self);
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    if (CreateProcessW(self, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        PostMessageW(g_hWnd, WM_COMMAND, ID_EXIT, 0);
+    } else {
+        /* No se pudo relanzar: restaurar la versión anterior */
+        DeleteFileW(newp);
+        MoveFileExW(self, newp, MOVEFILE_REPLACE_EXISTING);
+        MoveFileExW(oldp, self, MOVEFILE_REPLACE_EXISTING);
+        DeleteFileW(newp);
+    }
+    return 0;
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE hPrev, LPWSTR cmd, int show)
 {
-    HANDLE hMutex = CreateMutexW(NULL, TRUE, L"MonitorCPU_RAM_GPU_SingleInstance");
-    if (!hMutex || GetLastError() == ERROR_ALREADY_EXISTS) {
-        if (hMutex) CloseHandle(hMutex);
-        return 0;
+    /* Tras una auto-actualización la instancia anterior aún se está cerrando */
+    int tries = (cmd && lstrcmpW(cmd, L"--updated") == 0) ? 100 : 1;
+    HANDLE hMutex = NULL;
+    for (;;) {
+        hMutex = CreateMutexW(NULL, TRUE, L"MonitorCPU_RAM_GPU_SingleInstance");
+        if (hMutex && GetLastError() != ERROR_ALREADY_EXISTS) break;
+        if (hMutex) { CloseHandle(hMutex); hMutex = NULL; }
+        if (--tries <= 0) return 0;
+        Sleep(100);
+    }
+
+    /* Limpiar el ejecutable anterior dejado por una actualización previa */
+    {
+        WCHAR selfp[MAX_PATH + 8];
+        DWORD sl = GetModuleFileNameW(NULL, selfp, MAX_PATH);
+        if (sl > 0 && sl < MAX_PATH) {
+            StringCchCatW(selfp, MAX_PATH + 8, L".old");
+            DeleteFileW(selfp);
+        }
     }
 
     g_hInst = inst;
@@ -1413,6 +1611,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE hPrev, LPWSTR cmd, int show)
     TrayAdd(g_hWnd, g_hIcon);
     ShowWindow(g_hWnd, SW_SHOW);
     UpdateData();
+
+    HANDLE hUpd = CreateThread(NULL, 0, UpdateThread, NULL, 0, NULL);
+    if (hUpd) CloseHandle(hUpd);
 
     MSG msg;
     while (g_running && GetMessageW(&msg, NULL, 0, 0)) {

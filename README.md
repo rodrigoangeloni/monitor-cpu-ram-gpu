@@ -9,11 +9,13 @@ Overlay transparente para Windows que muestra uso de **CPU**, **RAM**, **GPU**, 
 ## 🎯 Características
 
 - **1 solo archivo** — lógica completa en `monitor.c`
-- **<170 KB el EXE** — compilado con optimización de tamaño (MSVC ~169 KB / MinGW ~51 KB)
+- **<170 KB el EXE** — compilado con optimización de tamaño (MSVC ~169 KB / MinGW ~71 KB)
 - **Solo APIs nativas** — Win32 GDI + PDH + DXGI, cero librerías de terceros
 - **Interfaz minimalista y compacta** — barras con texto y porcentaje dentro de cada barra
 - **Overlay transparente** — siempre visible, nunca molesta
 - **Recuerda posición, opacidad y escala** — se guarda automáticamente en el registro
+- **Encabezado informativo** — título `MONITOR` con el subtítulo `CPU RAM GPU VRAM`
+- **Icono en la bandeja** — clic derecho para fijar/desfijar posición, configuración o salir
 - **Menú de configuración** — clic en el engranaje superior derecho
 
 Lo que realmente importa: **cuánto están usando tu CPU, RAM, GPU y red ahora mismo**. Sin distracciones.
@@ -22,7 +24,7 @@ Lo que realmente importa: **cuánto están usando tu CPU, RAM, GPU y red ahora m
 
 ## ⚙️ Compilar
 
-### MinGW-w64 (~52 KB)
+### MinGW-w64 (~71 KB)
 ```bat
 build_mingw.bat
 ```
@@ -32,7 +34,7 @@ build_mingw.bat
 build_msvc.bat
 ```
 
-📦 **Salida**: `monitor.exe` — siempre bajo 300 KB
+📦 **Salida**: `monitor.exe` — siempre bajo 300 KB. En los [releases](https://github.com/rodrigoangeloni/monitor-cpu-ram-gpu/releases/latest) se publican ambas compilaciones: `monitor-mingw.exe` y `monitor-msvc.exe`.
 
 ---
 
@@ -52,7 +54,8 @@ monitor.exe
 | Menú contextual | Click derecho |
 | Fijar posición | Menú → "Fijar posición" (o doble-click en bandeja) |
 | Desfijar posición | Menú → "Desfijar posición" (o doble-click en bandeja) |
-| Salir | Menú → "Salir" |
+| Menú de la bandeja | Click derecho sobre el icono de la bandeja del sistema |
+| Salir | Menú → "Salir" (ventana o bandeja) |
 
 ---
 

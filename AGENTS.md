@@ -41,3 +41,4 @@ No unit test suite exists. Verify changes by:
    - Verificar que ambos estén bajo 300 KB y que `VersionInfo.FileVersion` sea `X.Y.Z.0`.
 3. **Commit** a `main`, **crear el tag** anotado `vX.Y.Z` y hacer push del commit y del tag.
 4. **Crear el release** con `gh release create vX.Y.Z dist\monitor-mingw.exe dist\monitor-msvc.exe` incluyendo notas de cambios en español.
+5. **Captura y README** (antes del commit): tomar una captura actual de la app y guardarla como `img\Monitor_by_RoanDev_vX.Y.Z.jpg`; actualizar el README (imagen principal, tabla de Screenshot con enlace de descarga, novedades, tamaños y nombres de los ejecutables). Si no se puede capturar la pantalla desde el entorno, pedir la captura al usuario.

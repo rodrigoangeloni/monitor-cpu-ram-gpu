@@ -1249,11 +1249,13 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
 
     case WM_TRAY:
-        if (lParam == WM_RBUTTONUP) {
+        /* Con NOTIFYICON_VERSION_4 el evento viene en LOWORD(lParam) */
+        if (LOWORD(lParam) == WM_RBUTTONUP || LOWORD(lParam) == WM_CONTEXTMENU) {
             POINT pt;
             GetCursorPos(&pt);
             ShowContextMenu(hWnd, pt.x, pt.y);
-        } else if (lParam == WM_LBUTTONDBLCLK) {
+            PostMessageW(hWnd, WM_NULL, 0, 0);
+        } else if (LOWORD(lParam) == WM_LBUTTONDBLCLK) {
             ToggleLock();
         }
         return 0;
@@ -1304,7 +1306,7 @@ static void SavePosition(void)
     if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\RoanDev\\MonitorOverlay",
                         0, NULL, 0, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
         RECT rc;
-        GetWindowRect(g_hWnd, &rc);
+        if (!g_hWnd || !GetWindowRect(g_hWnd, &rc)) { RegCloseKey(hKey); return; }
         DWORD v;
         v = (DWORD)rc.left;
         RegSetValueExW(hKey, L"PosX", 0, REG_DWORD, (BYTE*)&v, sizeof(v));
@@ -1316,6 +1318,10 @@ static void SavePosition(void)
 
 static void LoadPosition(int *px, int *py)
 {
+    int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int vr = vx + GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    int vb = vy + GetSystemMetrics(SM_CYVIRTUALSCREEN);
     int sw = GetSystemMetrics(SM_CXSCREEN);
     int sh = GetSystemMetrics(SM_CYSCREEN);
     int minH = g_l.header_h + g_l.pad_y * 2 + g_l.sec_h * 2 + g_l.footer_h;
@@ -1326,11 +1332,11 @@ static void LoadPosition(int *px, int *py)
                       0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS) {
         DWORD v, sz = sizeof(DWORD);
         if (RegQueryValueExW(hKey, L"PosX", NULL, NULL, (BYTE*)&v, &sz) == ERROR_SUCCESS) {
-            if ((int)v >= 0 && (int)v <= sw - g_l.width) *px = (int)v;
+            if ((int)v >= vx && (int)v <= vr - g_l.width) *px = (int)v;
         }
         sz = sizeof(DWORD);
         if (RegQueryValueExW(hKey, L"PosY", NULL, NULL, (BYTE*)&v, &sz) == ERROR_SUCCESS) {
-            if ((int)v >= 0 && (int)v <= sh - minH) *py = (int)v;
+            if ((int)v >= vy && (int)v <= vb - minH) *py = (int)v;
         }
         RegCloseKey(hKey);
     }

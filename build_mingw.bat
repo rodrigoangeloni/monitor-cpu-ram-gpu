@@ -13,7 +13,7 @@ C:\ProgramData\chocolatey\lib\mingw\tools\mingw64\bin\gcc.exe
 
 for %%p in (%MINGW_PATHS%) do if exist %%p set MINGW=%%p
 if not defined MINGW (
-    where gcc >nul 2>nul && set MINGW=gcc
+    for /f "delims=" %%g in ('where gcc 2^>nul') do if not defined MINGW set MINGW=%%g
 )
 
 if not defined MINGW (

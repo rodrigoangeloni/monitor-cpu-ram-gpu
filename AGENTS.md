@@ -29,3 +29,15 @@ Lightweight C Windows desktop application (`monitor.c`) for real-time CPU, RAM, 
 No unit test suite exists. Verify changes by:
 1. Executing `.\build_mingw.bat` or `.\build_msvc.bat` to confirm clean compilation.
 2. Ensuring `monitor.exe` is created and stays within the 300 KB budget.
+
+## Release Procedure (OBLIGATORIO en cada nueva actualización)
+
+1. **Subir la versión** en ambos lugares, siempre iguales:
+   - monitor.c: `#define APP_VERSION L"vX.Y.Z"`
+   - `icon.rc`: `FILEVERSION`/`PRODUCTVERSION` (`X,Y,Z,0`) y los `FileVersion`/`ProductVersion` (`"X.Y.Z.0"`) en ambos bloques de idioma.
+2. **Compilar AMBAS versiones** (ambos scripts generan `monitor.exe`, copiar cada resultado antes de la siguiente compilación; cerrar `monitor.exe` si está corriendo):
+   - `.\build_mingw.bat` → copiar a `dist\monitor-mingw.exe`
+   - `.\build_msvc.bat` → copiar a `dist\monitor-msvc.exe`
+   - Verificar que ambos estén bajo 300 KB y que `VersionInfo.FileVersion` sea `X.Y.Z.0`.
+3. **Commit** a `main`, **crear el tag** anotado `vX.Y.Z` y hacer push del commit y del tag.
+4. **Crear el release** con `gh release create vX.Y.Z dist\monitor-mingw.exe dist\monitor-msvc.exe` incluyendo notas de cambios en español.
